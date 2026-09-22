@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accounting & Invoice Management - Cloud</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: #fafafa; color: #1a1a1a; line-height: 1.6; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        header { background: #ffffff; border-bottom: 1px solid #e0e0e0; padding: 20px 24px; margin: -24px -24px 24px -24px; display: flex; justify-content: space-between; align-items: center; }
+        h1 { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+        .header-info { font-size: 13px; color: #666666; }
+        .auth-container { max-width: 420px; margin: 80px auto; padding: 40px; background: #ffffff; border: 1px solid #e0e0e0; border-radius: 8px; }
+        .auth-container h2 { font-size: 18px; margin-bottom: 30px; text-align: center; color: #1a1a1a; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #333333; }
+        input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid #d0d0d0; border-radius: 6px; font-family: inherit; font-size: 13px; background: #ffffff; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #0066cc; box-shadow: 0 0 0 3px rgba(0,102,204,0.1); }
+        button { background: #0066cc; color: #ffffff; padding: 10px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; width: 100%; transition: background 0.2s; }
+        button:hover { background: #0052a3; }
+        button.secondary { background: #ffffff; color: #0066cc; border: 1px solid #0066cc; }
+        button.secondary:hover { background: #f0f7ff; }
+        .tabs { display: flex; border-bottom: 1px solid #e0e0e0; margin-bottom: 24px; background: #ffffff; border-radius: 8px 8px 0 0; padding: 0 16px; }
+        .tab-button { padding: 12px 16px; border: none; background: transparent; border-bottom: 3px solid transparent; cursor: pointer; font-size: 13px; font-weight: 600; color: #666666; }
+        .tab-button.active { border-bottom-color: #0066cc; color: #0066cc; }
+        .tab-content { display: none; background: #ffffff; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e0e0e0; border-top: none; }
+        .tab-content.active { display: block; }
+        .section-title { font-size: 14px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #e0e0e0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12px; }
+        th, td { padding: 12px; text-align: left; border: 1px solid #e0e0e0; }
+        th { background: #f5f5f5; font-weight: 600; }
+        tr:hover { background: #fafafa; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+        .form-row.full { grid-template-columns: 1fr; }
+        .button-group { display: flex; gap: 12px; margin-top: 20px; }
+        .button-group button { flex: 1; }
+        .logout-btn { background: #ef4444; padding: 8px 16px; font-size: 12px; border-radius: 6px; }
+        .logout-btn:hover { background: #dc2626; }
+        .admin-badge { display: inline-block; background: #0066cc; color: #ffffff; padding: 4px 10px; font-size: 11px; border-radius: 4px; margin-left: 12px; font-weight: 600; }
+        .hidden { display: none; }
+        .sync-status { font-size: 11px; color: #666666; margin-top: 8px; }
+        .sync-status.synced { color: #22c55e; }
+        .sync-status.error { color: #ef4444; }
+        .icon-btn { background: none; border: none; cursor: pointer; padding: 4px; font-size: 14px; color: #ef4444; }
+        small { color: #666666; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div id="authContainer" class="auth-container">
+    <h2>Accounting System Login</h2>
+    <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" id="loginEmail" placeholder="your@email.com">
+    </div>
+    <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="loginPassword" placeholder="••••••••">
+    </div>
+    <button onclick="login()">Sign In</button>
+    <p style="text-align: center; margin-top: 16px; font-size: 12px;">
+        New user? <a href="#" onclick="showSignup()" style="color: #0066cc; text-decoration: none;">Create account</a>
+    </p>
+    <div id="loginError" style="color: #ef4444; text-align: center; margin-top: 12px; font-size: 12px; display: none;"></div>
+</div>
+
+<div id="signupContainer" class="auth-container hidden">
+    <h2>Create New Account</h2>
+    <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" id="signupName" placeholder="Your name">
+    </div>
+    <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" id="signupEmail" placeholder="your@email.com">
+    </div>
+    <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="signupPassword" placeholder="••••••••">
+    </div>
+    <div class="form-group">
+        <label>User Type</label>
+        <select id="signupRole"><option value="client">Client</option><option value="admin">Admin</option></select>
+    </div>
+    <button onclick="signup()">Create Account</button>
+    <button class="secondary" onclick="showLogin()" style="margin-top: 12px;">Back to Login</button>
+    <div id="signupError" style="color: #ef4444; text-align: center; margin-top: 12px; font-size: 12px; display: none;"></div>
+</div>
+
+<div id="appContainer" class="hidden">
+    <header>
+        <div>
+            <h1>Accounting & Invoice Management</h1>
+            <div class="header-info">
+                <span id="userEmail"></span>
+                <span id="adminBadge" class="admin-badge hidden">ADMIN</span>
+                <div class="sync-status" id="syncStatus">✓ Cloud sync ready</div>
+            </div>
+        </div>
+        <div style="display:flex; gap:12px;">
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('outstanding')">Outstanding Report</button>
+            <button class="tab-button" onclick="switchTab('invoices')">Invoice Master</button>
+            <button class="tab-button" onclick="switchTab('payments')">Payment Receipts</button>
+            <button class="tab-button" onclick="switchTab('tds')">TDS Tracking</button>
+            <button class="tab-button" onclick="switchTab('reminders')">Tax Reminders</button>
+        </div>
+
+        <!-- Outstanding Report Tab -->
+        <div id="outstanding" class="tab-content active">
+            <div class="section-title">Outstanding Invoices by Client</div>
+            <div id="outstandingReport"></div>
+            <button onclick="exportOutstandingToPDF()" style="margin-top: 20px;">Export to PDF</button>
+        </div>
+
+        <!-- Invoice Master Tab -->
+        <div id="invoices" class="tab-content">
+            <div class="section-title">Add New Invoice</div>
+            <div class="form-row">
+                <div>
+                    <label>Client Name</label>
+                    <input type="text" id="invClient" placeholder="Client name">
+                </div>
+                <div>
+                    <label>Invoice #</label>
+                    <input type="text" id="invNumber" placeholder="INV-001">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label>Invoice Date</label>
+                    <input type="date" id="invDate">
+                </div>
+                <div>
+                    <label>Due Date</label>
+                    <input type="date" id="invDueDate">
+                </div>
+            </div>
+            <div class="form-row full">
+                <div>
+                    <label>Description</label>
+                    <textarea id="invDesc" placeholder="Invoice description" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label>Total Amount (₹)</label>
+                    <input type="number" id="invTotal" placeholder="0.00" step="0.01">
+                </div>
+                <div>
+                    <label>GST %</label>
+                    <input type="number" id="invGST" value="18" step="0.01">
+                </div>
+            </div>
+            <div class="button-group">
+                <button onclick="addInvoiceManual()">Add Invoice</button>
+            </div>
+
+            <div class="section-title" style="margin-top: 40px;">Import from Tally Excel</div>
+            <input type="file" id="tallyFile" accept=".xlsx,.xls" style="margin-bottom: 12px;">
+            <button onclick="importTallyExcel()">Import Invoices</button>
+
+            <div class="section-title" style="margin-top: 40px;">Invoice List</div>
+            <div id="invoicesList"></div>
+        </div>
+
+        <!-- Payment Receipts Tab -->
+        <div id="payments" class="tab-content">
+            <div class="section-title">Add Payment Receipt</div>
+            <div class="form-row">
+                <div>
+                    <label>Client Name</label>
+                    <input type="text" id="payClient" placeholder="Client name">
+                </div>
+                <div>
+                    <label>Invoice #</label>
+                    <input type="text" id="payInvoice" placeholder="INV-001">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label>Payment Date</label>
+                    <input type="date" id="payDate">
+                </div>
+                <div>
+                    <label>Amount Received (₹)</label>
+                    <input type="number" id="payAmount" placeholder="0.00" step="0.01">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label>Payment Mode</label>
+                    <select id="payMode">
+                        <option>Bank Transfer</option>
+                        <option>Cheque</option>
+                        <option>Cash</option>
+                        <option>UPI</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Reference</label>
+                    <input type="text" id="payRef" placeholder="Transaction ID or Cheque #">
+                </div>
+            </div>
+            <div class="button-group">
+                <button onclick="addPayment()">Add Payment</button>
+            </div>
+
+            <div class="section-title" style="margin-top: 40px;">Payment History</div>
+            <div id="paymentsList"></div>
+        </div>
+
+        <!-- TDS Tracking Tab -->
+        <div id="tds" class="tab-content">
+            <div class="section-title">TDS Information - 26AS Received</div>
+            <div id="tdsReceivedTable"></div>
+
+            <div class="section-title" style="margin-top: 40px;">TDS Information - 26AS Not Received</div>
+            <div id="tdsNotReceivedTable"></div>
+
+            <div class="section-title" style="margin-top: 40px;">Add Previous Year TDS</div>
+            <div class="form-row">
+                <div>
+                    <label>Financial Year</label>
+                    <input type="text" id="prevTdsYear" placeholder="2023-24">
+                </div>
+                <div>
+                    <label>TDS Amount (₹)</label>
+                    <input type="number" id="prevTdsAmount" placeholder="0.00" step="0.01">
+                </div>
+            </div>
+            <div class="form-row">
+                <div>
+                    <label>Description</label>
+                    <input type="text" id="prevTdsDesc" placeholder="TDS details">
+                </div>
+            </div>
+            <div class="button-group">
+                <button onclick="addPreviousTds()">Add TDS</button>
+            </div>
+
+            <button onclick="exportTdsReportToPDF()" style="margin-top: 20px;">Export TDS Report</button>
+        </div>
+
+        <!-- Tax Reminders Tab -->
+        <div id="reminders" class="tab-content">
+            <div class="section-title">Add Tax Reminder</div>
+            <div class="form-row">
+                <div>
+                    <label>Reminder Description</label>
+                    <input type="text" id="reminderDesc" placeholder="e.g., GST Return Due">
+                </div>
+                <div>
+                    <label>Due Date</label>
+                    <input type="date" id="reminderDate">
+                </div>
+            </div>
+            <div class="button-group">
+                <button onclick="addReminder()">Add Reminder</button>
+            </div>
+
+            <div class="section-title" style="margin-top: 40px;">Upcoming Reminders</div>
+            <div id="remindersList"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Firebase Configuration
+const FIREBASE_API_KEY = "AIzaSyCGHet-5T-gILcZrLSVoTUr6Oj0uf80ljM";
+const FIREBASE_PROJECT = "accounting-app-74cc8";
+const FIREBASE_DB_URL = `https://${FIREBASE_PROJECT}.firebaseio.com`;
+
+let currentUser = null;
+let currentEmail = null;
+
+// Authentication using Firebase REST API
+async function login() {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    const errorDiv = document.getElementById('loginError');
+
+    if (!email || !password) {
+        errorDiv.textContent = 'Please enter email and password';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
+            {
+                method: 'POST',
+                body: JSON.stringify({
+                    email: email,
+                    password: password,
+                    returnSecureToken: true
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        if (data.error) {
+            errorDiv.textContent = 'Login failed: ' + data.error.message;
+            errorDiv.style.display = 'block';
+            return;
+        }
+
+        currentUser = { uid: data.localId, email: email };
+        currentEmail = email;
+        localStorage.setItem('firebaseToken', data.idToken);
+        loadApp();
+        migrateLocalStorageToCloud();
+
+    } catch (error) {
+        errorDiv.textContent = 'Login failed: ' + error.message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+async function signup() {
+    const name = document.getElementById('signupName').value;
+    const email = document.getElementById('signupEmail').value;
+    const password = document.getElementById('signupPassword').value;
+    const role = document.getElementById('signupRole').value;
+    const errorDiv = document.getElementById('signupError');
+
+    if (!name || !email || !password) {
+        errorDiv.textContent = 'Please fill in all fields';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
+            {
+                method: 'POST',
+                body: JSON.stringify({
+                    email: email,
+                    password: password,
+                    returnSecureToken: true
+                })
+            }
+        );
+
+        const data = await response.json();
+
+        if (data.error) {
+            errorDiv.textContent = 'Signup failed: ' + data.error.message;
+            errorDiv.style.display = 'block';
+            return;
+        }
+
+        currentUser = { uid: data.localId, email: email };
+        currentEmail = email;
+        localStorage.setItem('firebaseToken', data.idToken);
+
+        // Save user profile
+        await saveUserProfile(name, role, data.idToken);
+        loadApp();
+
+    } catch (error) {
+        errorDiv.textContent = 'Signup failed: ' + error.message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+async function saveUserProfile(name, role, token) {
+    const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+    await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}.json?auth=${token}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+            name: name,
+            email: currentEmail,
+            role: role,
+            createdAt: new Date().toISOString()
+        })
+    });
+}
+
+function logout() {
+    currentUser = null;
+    currentEmail = null;
+    localStorage.removeItem('firebaseToken');
+    document.getElementById('appContainer').classList.add('hidden');
+    document.getElementById('authContainer').classList.remove('hidden');
+    showLogin();
+}
+
+function showLogin() {
+    document.getElementById('authContainer').classList.remove('hidden');
+    document.getElementById('signupContainer').classList.add('hidden');
+    document.getElementById('loginEmail').value = '';
+    document.getElementById('loginPassword').value = '';
+    document.getElementById('loginError').style.display = 'none';
+}
+
+function showSignup() {
+    document.getElementById('authContainer').classList.add('hidden');
+    document.getElementById('signupContainer').classList.remove('hidden');
+    document.getElementById('signupError').style.display = 'none';
+}
+
+function loadApp() {
+    document.getElementById('authContainer').classList.add('hidden');
+    document.getElementById('signupContainer').classList.add('hidden');
+    document.getElementById('appContainer').classList.remove('hidden');
+    document.getElementById('userEmail').textContent = currentEmail;
+    loadOutstanding();
+    loadInvoices();
+    loadPayments();
+}
+
+// Migrate localStorage data to cloud
+async function migrateLocalStorageToCloud() {
+    const token = localStorage.getItem('firebaseToken');
+    const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+
+    const localInvoices = JSON.parse(localStorage.getItem(`invoices_${currentEmail}`) || '[]');
+    const localPayments = JSON.parse(localStorage.getItem(`payments_${currentEmail}`) || '[]');
+
+    if (localInvoices.length > 0) {
+        await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/invoices.json?auth=${token}`, {
+            method: 'PUT',
+            body: JSON.stringify(localInvoices)
+        });
+    }
+
+    if (localPayments.length > 0) {
+        await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/payments.json?auth=${token}`, {
+            method: 'PUT',
+            body: JSON.stringify(localPayments)
+        });
+    }
+
+    if (localInvoices.length > 0 || localPayments.length > 0) {
+        document.getElementById('syncStatus').textContent = '✓ Data migrated to cloud';
+        document.getElementById('syncStatus').classList.add('synced');
+    }
+}
+
+// Invoice Functions
+async function addInvoiceManual() {
+    const client = document.getElementById('invClient').value;
+    const number = document.getElementById('invNumber').value;
+    const date = document.getElementById('invDate').value;
+    const total = parseFloat(document.getElementById('invTotal').value);
+
+    if (!client || !number || !date || !total) {
+        alert('Please fill in required fields');
+        return;
+    }
+
+    const token = localStorage.getItem('firebaseToken');
+    const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+
+    const invoice = {
+        id: Date.now().toString(),
+        client,
+        number,
+        date: formatDateDDMMYYYY(new Date(date)),
+        totalAmount: total,
+        status: 'Unpaid'
+    };
+
+    try {
+        await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/invoices/${invoice.id}.json?auth=${token}`, {
+            method: 'PUT',
+            body: JSON.stringify(invoice)
+        });
+        loadInvoices();
+        clearInvoiceForm();
+    } catch (error) {
+        alert('Error saving invoice: ' + error.message);
+    }
+}
+
+async function loadInvoices() {
+    const token = localStorage.getItem('firebaseToken');
+    const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+
+    try {
+        const response = await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/invoices.json?auth=${token}`);
+        const data = await response.json();
+
+        const invoices = data ? Object.values(data) : [];
+
+        let html = '<table><tr><th>Invoice #</th><th>Client</th><th>Date</th><th>Amount</th><th>Status</th><th>Actions</th></tr>';
+        invoices.forEach(inv => {
+            html += `<tr>
+                <td>${inv.number}</td>
+                <td>${inv.client}</td>
+                <td>${inv.date}</td>
+                <td>₹${inv.totalAmount.toFixed(2)}</td>
+                <td>${inv.status}</td>
+                <td><button class="icon-btn" onclick="deleteInvoice('${inv.id}')">✕</button></td>
+            </tr>`;
+        });
+        html += '</table>';
+        document.getElementById('invoicesList').innerHTML = html || '<p>No invoices</p>';
+    } catch (error) {
+        console.error('Error loading invoices:', error);
+    }
+}
+
+async function deleteInvoice(id) {
+    if (!confirm('Delete this invoice?')) return;
+
+    const token = localStorage.getItem('firebaseToken');
+    const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+
+    try {
+        await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/invoices/${id}.json?auth=${token}`, {
+            method: 'DELETE'
+        });
+        loadInvoices();
+    } catch (error) {
+        alert('Error deleting invoice: ' + error.message);
+    }
+}
+
+function clearInvoiceForm() {
+    document.getElementById('invClient').value = '';
+    document.getElementById('invNumber').value = '';
+    document.getElementById('invDate').value = '';
+    document.getElementById('invTotal').value = '';
+}
+
+// Payment Functions
+async function addPayment() {
+    const client = document.getElementById('payClient').value;
+    const invoice = document.getElementById('payInvoice').value;
+    const date = document.getElementById('payDate').value;
+    const amount = parseFloat(document.getElementById('payAmount').value);
+
+    if (!client || !invoice || !date || !amount) {
+        alert('Please fill in required fields');
+        return;
+    }
+
+    const token = localStorage.getItem('firebaseToken');
+    const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+
+    const payment = {
+        id: Date.now().toString(),
+        client,
+        invoiceNumber: invoice,
+        date: formatDateDDMMYYYY(new Date(date)),
+        amountReceived: amount
+    };
+
+    try {
+        await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/payments/${payment.id}.json?auth=${token}`, {
+            method: 'PUT',
+            body: JSON.stringify(payment)
+        });
+        loadPayments();
+        clearPaymentForm();
+    } catch (error) {
+        alert('Error saving payment: ' + error.message);
+    }
+}
+
+async function loadPayments() {
+    const token = localStorage.getItem('firebaseToken');
+    const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+
+    try {
+        const response = await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/payments.json?auth=${token}`);
+        const data = await response.json();
+
+        const payments = data ? Object.values(data) : [];
+
+        let html = '<table><tr><th>Date</th><th>Client</th><th>Invoice #</th><th>Amount</th><th>Actions</th></tr>';
+        payments.forEach(pay => {
+            html += `<tr>
+                <td>${pay.date}</td>
+                <td>${pay.client}</td>
+                <td>${pay.invoiceNumber}</td>
+                <td>₹${pay.amountReceived.toFixed(2)}</td>
+                <td><button class="icon-btn" onclick="deletePayment('${pay.id}')">✕</button></td>
+            </tr>`;
+        });
+        html += '</table>';
+        document.getElementById('paymentsList').innerHTML = html || '<p>No payments</p>';
+    } catch (error) {
+        console.error('Error loading payments:', error);
+    }
+}
+
+async function deletePayment(id) {
+    if (!confirm('Delete this payment?')) return;
+
+    const token = localStorage.getItem('firebaseToken');
+    const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+
+    try {
+        await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/payments/${id}.json?auth=${token}`, {
+            method: 'DELETE'
+        });
+        loadPayments();
+    } catch (error) {
+        alert('Error deleting payment: ' + error.message);
+    }
+}
+
+function clearPaymentForm() {
+    document.getElementById('payClient').value = '';
+    document.getElementById('payInvoice').value = '';
+    document.getElementById('payDate').value = '';
+    document.getElementById('payAmount').value = '';
+}
+
+// Outstanding Report
+async function loadOutstanding() {
+    try {
+        const token = localStorage.getItem('firebaseToken');
+        const sanitizedEmail = currentEmail.replace(/\./g, '_').replace(/@/g, '_');
+
+        const invResponse = await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/invoices.json?auth=${token}`);
+        const payResponse = await fetch(`${FIREBASE_DB_URL}/users/${sanitizedEmail}/payments.json?auth=${token}`);
+
+        const invoices = invResponse.ok ? (await invResponse.json() || {}) : {};
+        const payments = payResponse.ok ? (await payResponse.json() || {}) : {};
+
+        let clientData = {};
+        Object.values(invoices).forEach(inv => {
+            if (!clientData[inv.client]) {
+                clientData[inv.client] = { invoiced: 0, received: 0 };
+            }
+            clientData[inv.client].invoiced += inv.totalAmount;
+        });
+
+        Object.values(payments).forEach(pay => {
+            if (clientData[pay.client]) {
+                clientData[pay.client].received += pay.amountReceived;
+            }
+        });
+
+        let html = '';
+        for (const [client, data] of Object.entries(clientData)) {
+            const outstanding = data.invoiced - data.received;
+            if (outstanding > 0) {
+                html += `<div style="margin-bottom: 24px; padding: 16px; background: #f9f9f9; border-radius: 6px;">
+                    <strong>${client}</strong><br>
+                    Total Invoiced: ₹${data.invoiced.toFixed(2)}<br>
+                    Total Received: ₹${data.received.toFixed(2)}<br>
+                    Outstanding: ₹${outstanding.toFixed(2)}
+                </div>`;
+            }
+        }
+
+        document.getElementById('outstandingReport').innerHTML = html || '<p>No outstanding invoices</p>';
+    } catch (error) {
+        console.error('Error loading outstanding:', error);
+    }
+}
+
+// Tab Switching
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+
+    document.getElementById(tabName).classList.add('active');
+    event.target.classList.add('active');
+
+    if (tabName === 'outstanding') loadOutstanding();
+    if (tabName === 'payments') loadPayments();
+}
+
+// Utility Functions
+function formatDateDDMMYYYY(date) {
+    if (typeof date === 'string') return date;
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    return `${d}-${m}-${y}`;
+}
+
+// Placeholder functions
+function exportOutstandingToPDF() { alert('PDF export coming soon'); }
+function addReminder() { alert('Reminder feature coming soon'); }
+function addPreviousTds() { alert('TDS tracking coming soon'); }
+function exportTdsReportToPDF() { alert('TDS export coming soon'); }
+function importTallyExcel() { alert('Tally import coming soon'); }
+
+// Check if already logged in
+window.addEventListener('load', () => {
+    const token = localStorage.getItem('firebaseToken');
+    if (token) {
+        currentEmail = localStorage.getItem('lastEmail') || 'user@example.com';
+        loadApp();
+    }
+});
+</script>
+
+</body>
+</html>
