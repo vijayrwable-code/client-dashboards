@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accounting & Invoice Management System</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: #fafafa; color: #1a1a1a; line-height: 1.6; }
@@ -49,8 +46,6 @@
         .copy-btn:hover { background: #16a34a; }
         .whatsapp-message { background: #f5f5f5; border: 1px solid #e0e0e0; padding: 16px; margin-top: 16px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
         small { color: #666666; font-size: 12px; }
-        .loading { display: inline-block; width: 12px; height: 12px; border: 2px solid #f3f3f3; border-top: 2px solid #0066cc; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -68,9 +63,6 @@
     <button onclick="login()">Sign In</button>
     <p style="text-align: center; margin-top: 16px; font-size: 12px;">
         New user? <a href="#" onclick="showSignup()" style="color: #0066cc; text-decoration: none;">Create account</a>
-    </p>
-    <p style="text-align: center; margin-top: 12px; font-size: 11px; color: #999;">
-        Demo: admin@demo.com / admin123
     </p>
 </div>
 
@@ -289,72 +281,53 @@
             <button onclick="addReminder()">Add Reminder</button>
             <div id="reminderList"></div>
         </div>
-
-        <!-- TAB 6: CLIENT DASHBOARDS -->
-        <div id="tab-6" class="tab-content">
-            <div class="section-title">Generate Client Dashboard</div>
-            <p style="font-size:12px;color:#666;margin-bottom:16px;">Generate a standalone dashboard for each client. The file will contain all their invoices, payments, and TDS information and can be opened directly without a server.</p>
-
-            <div class="form-row">
-                <div>
-                    <label>Select Client</label>
-                    <select id="clientDashboardSelect">
-                        <option value="">-- Select Client --</option>
-                    </select>
-                </div>
-            </div>
-
-            <button onclick="generateClientDashboard()" style="margin-top:16px;background:#22c55e;">📥 Generate & Download Dashboard</button>
-            <div id="dashboardMessage" style="margin-top:16px;"></div>
-        </div>
     </div>
 </div>
 
 <script>
-// Firebase Configuration
-const firebaseConfig = {
-    apiKey: "AIzaSyCGHet-5T-gILcZrLSVoTUr6Oj0uf80ljM",
-    authDomain: "accounting-app-74cc8.firebaseapp.com",
-    projectId: "accounting-app-74cc8",
-    storageBucket: "accounting-app-74cc8.firebasestorage.app",
-    messagingSenderId: "829534391621",
-    appId: "1:829534391621:web:2be694419f96146f9d822c"
-};
-
-// Initialize Firebase
-let db, auth;
-try {
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.firestore();
-    auth = firebase.auth();
-} catch (err) {
-    console.error('Firebase init error:', err);
-}
-
 let currentUser = null;
 let isAdmin = false;
-let isDemo = false;
 
-// ==================== UTILITY FUNCTIONS ====================
 function formatDateDDMMYYYY(val) {
     if (!val && val !== 0) return '';
+
     let day, month, year;
+
+    // If it's a Date object
     if (val instanceof Date) {
         day = val.getDate();
         month = val.getMonth() + 1;
         year = val.getFullYear();
-    } else if (typeof val === 'number') {
+    }
+    // If it's a number (Excel serial or timestamp)
+    else if (typeof val === 'number') {
         let date;
-        if (val > 50000) date = new Date(val);
-        else if (val > 0) date = new Date(Math.round((val - 25569) * 86400000));
-        else return '';
+        if (val > 50000) {
+            // Large number - treat as timestamp
+            date = new Date(val);
+        } else if (val > 0) {
+            // Excel serial date
+            date = new Date(Math.round((val - 25569) * 86400000));
+        } else {
+            return '';
+        }
         day = date.getDate();
         month = date.getMonth() + 1;
         year = date.getFullYear();
-    } else if (typeof val === 'string') {
+    }
+    // If it's a string
+    else if (typeof val === 'string') {
         const str = val.trim();
-        const formats = [/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/, /^(\d{1,2})[\/\-\.](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[\/\-\.](\d{2,4})$/i];
+
+        // Try to match various date formats
+        const formats = [
+            /^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/,  // DD/MM/YY or DD/MM/YYYY
+            /^(\d{1,2})[\/\-\.](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[\/\-\.](\d{2,4})$/i  // DD/MMM/YY or DD/MMM/YYYY
+        ];
+
         let matched = false;
+
+        // Try numeric format first
         const numMatch = str.match(formats[0]);
         if (numMatch) {
             day = parseInt(numMatch[1], 10);
@@ -362,6 +335,8 @@ function formatDateDDMMYYYY(val) {
             year = parseInt(numMatch[3], 10);
             matched = true;
         }
+
+        // Try text month format
         if (!matched) {
             const textMatch = str.match(formats[1]);
             if (textMatch) {
@@ -372,12 +347,30 @@ function formatDateDDMMYYYY(val) {
                 matched = true;
             }
         }
-        if (!matched) return '';
-    } else return '';
-    if (year < 100) year = year < 50 ? 2000 + year : 1900 + year;
-    if (!day || !month || !year || day < 1 || day > 31 || month < 1 || month > 12) return '';
+
+        if (!matched) {
+            return '';
+        }
+    } else {
+        return '';
+    }
+
+    // Convert 2-digit year to 4-digit
+    if (year < 100) {
+        year = year < 50 ? 2000 + year : 1900 + year;
+    }
+
+    // Validate
+    if (!day || !month || !year || day < 1 || day > 31 || month < 1 || month > 12) {
+        return '';
+    }
+
+    // Create date to validate
     const testDate = new Date(year, month - 1, day);
-    if (isNaN(testDate.getTime())) return '';
+    if (isNaN(testDate.getTime())) {
+        return '';
+    }
+
     const d = String(testDate.getDate()).padStart(2, '0');
     const m = String(testDate.getMonth() + 1).padStart(2, '0');
     const y = testDate.getFullYear();
@@ -385,8 +378,9 @@ function formatDateDDMMYYYY(val) {
 }
 
 function formatDateDDMMYYYYDisplay(dateStr) {
+    // Format for display: DD-MM-YYYY
     if (!dateStr) return '';
-    const ddmmyyyy = dateStr.toString();
+    const ddmmyyyy = dateStr.toString(); // e.g., "25052026"
     if (ddmmyyyy.length !== 8) return dateStr;
     return ddmmyyyy.substring(0, 2) + '-' + ddmmyyyy.substring(2, 4) + '-' + ddmmyyyy.substring(4, 8);
 }
@@ -401,55 +395,15 @@ function calculateGST(totalAmount) {
     };
 }
 
-// ==================== FIRESTORE FUNCTIONS ====================
-async function loadFromFirestore(collection, where = null) {
-    try {
-        let query = db.collection(collection);
-        if (where) query = query.where(where.field, where.operator, where.value);
-        const snapshot = await query.get();
-        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (err) {
-        console.error('Error loading from Firestore:', err);
-        return [];
-    }
-}
-
-async function saveToFirestore(collection, docId, data) {
-    try {
-        if (docId) {
-            await db.collection(collection).doc(docId).set(data, { merge: true });
-        } else {
-            return await db.collection(collection).add(data);
-        }
-    } catch (err) {
-        console.error('Error saving to Firestore:', err);
-        throw err;
-    }
-}
-
-async function deleteFromFirestore(collection, docId) {
-    try {
-        await db.collection(collection).doc(docId).delete();
-    } catch (err) {
-        console.error('Error deleting from Firestore:', err);
-        throw err;
-    }
-}
-
-// ==================== AUTH FUNCTIONS ====================
 function checkAuth() {
-    auth.onAuthStateChanged(async (user) => {
-        if (user) {
-            currentUser = { email: user.email, uid: user.uid };
-            isAdmin = true;
-            isDemo = false;
-            showApp();
-        } else {
-            currentUser = null;
-            isAdmin = false;
-            showAuth();
-        }
-    });
+    const user = JSON.parse(localStorage.getItem('currentUser'));
+    if (user) {
+        currentUser = user;
+        isAdmin = user.role === 'admin';
+        showApp();
+    } else {
+        showAuth();
+    }
 }
 
 function showAuth() {
@@ -480,7 +434,7 @@ function showSignup() {
     document.getElementById('signupContainer').classList.remove('hidden');
 }
 
-async function login() {
+function login() {
     const email = document.getElementById('loginEmail').value;
     const password = document.getElementById('loginPassword').value;
 
@@ -489,36 +443,20 @@ async function login() {
         return;
     }
 
-    // Demo mode
-    if (email === 'admin@demo.com' && password === 'admin123') {
-        currentUser = { email: 'admin@demo.com', uid: 'demo-admin', name: 'Admin' };
-        isAdmin = true;
-        isDemo = true;
-        showApp();
-        return;
-    }
+    const users = JSON.parse(localStorage.getItem('users') || '{}');
+    const user = Object.values(users).find(u => u.email === email && u.password === password);
 
-    if (email === 'akhtar@demo.com' && password === 'akhtar123') {
-        currentUser = { email: 'akhtar@demo.com', uid: 'demo-akhtar', name: 'Akhtar' };
-        isAdmin = false;
-        isDemo = true;
+    if (user) {
+        currentUser = user;
+        isAdmin = user.role === 'admin';
+        localStorage.setItem('currentUser', JSON.stringify(currentUser));
         showApp();
-        return;
-    }
-
-    // Firebase auth
-    try {
-        const userCred = await auth.signInWithEmailAndPassword(email, password);
-        currentUser = { email: userCred.user.email, uid: userCred.user.uid };
-        isAdmin = true;
-        isDemo = false;
-        showApp();
-    } catch (err) {
-        alert('Error: ' + err.message);
+    } else {
+        alert('Invalid email or password');
     }
 }
 
-async function signup() {
+function signup() {
     const name = document.getElementById('signupName').value;
     const email = document.getElementById('signupEmail').value;
     const password = document.getElementById('signupPassword').value;
@@ -529,51 +467,45 @@ async function signup() {
         return;
     }
 
-    try {
-        const userCred = await auth.createUserWithEmailAndPassword(email, password);
-        currentUser = { email: userCred.user.email, uid: userCred.user.uid, name, role };
-        isAdmin = role === 'admin';
-        isDemo = false;
-        showApp();
-    } catch (err) {
-        alert('Error: ' + err.message);
+    const users = JSON.parse(localStorage.getItem('users') || '{}');
+    if (users[email]) {
+        alert('Email already registered');
+        return;
     }
+
+    const newUser = {
+        id: Date.now().toString(),
+        name, email, password, role,
+        createdAt: new Date().toISOString()
+    };
+
+    users[email] = newUser;
+    localStorage.setItem('users', JSON.stringify(users));
+    alert('Account created! Please login.');
+    showLogin();
 }
 
-async function logout() {
-    if (!isDemo) {
-        await auth.signOut();
-    }
-    currentUser = null;
-    isAdmin = false;
-    isDemo = false;
+function logout() {
+    localStorage.removeItem('currentUser');
     showAuth();
 }
 
-async function clearAllData() {
+function clearAllData() {
     const confirmed = confirm('⚠️ WARNING: This will DELETE ALL invoices, payments, TDS records, and reminders.\n\nThis action CANNOT be undone.\n\nAre you sure?');
+
     if (!confirmed) return;
 
     const confirmed2 = confirm('Last chance! This will permanently delete everything.\n\nClick OK only if you are absolutely sure.');
+
     if (!confirmed2) return;
 
     try {
-        if (isDemo) {
-            // For demo, clear localStorage
-            localStorage.removeItem('invoices_' + currentUser.email);
-            localStorage.removeItem('payments_' + currentUser.email);
-            localStorage.removeItem('tds_' + currentUser.email);
-            localStorage.removeItem('tdsTracking_' + currentUser.email);
-            localStorage.removeItem('prevTds_' + currentUser.email);
-            localStorage.removeItem('reminders_' + currentUser.email);
-        } else {
-            // For Firebase, delete all documents
-            const collections = ['invoices', 'payments', 'tdsTracking', 'prevTds', 'reminders'];
-            for (const collection of collections) {
-                const docs = await db.collection(collection).where('userId', '==', currentUser.uid).get();
-                docs.docs.forEach(doc => doc.ref.delete());
-            }
-        }
+        // Clear all data for current user
+        localStorage.removeItem('invoices_' + currentUser.email);
+        localStorage.removeItem('payments_' + currentUser.email);
+        localStorage.removeItem('tds_' + currentUser.email);
+        localStorage.removeItem('reminders_' + currentUser.email);
+
         alert('✓ All data cleared successfully!');
         logout();
     } catch (err) {
@@ -581,66 +513,126 @@ async function clearAllData() {
     }
 }
 
-// ==================== INVOICE FUNCTIONS ====================
-async function addInvoiceManual() {
-    const number = document.getElementById('invNumber').value.trim();
-    const dateInput = document.getElementById('invDate').value;
-    const clientName = document.getElementById('invClient').value.trim();
-    const amount = parseFloat(document.getElementById('invAmount').value);
-    const narration = document.getElementById('invNarration').value.trim();
+function initializeTabs() {
+    // Outstanding Report now first tab
+    const tabs = ['Outstanding Report', 'Invoice Master', 'Payment Receipts', 'TDS Tracking', 'Tax Reminders'];
+    // Map tab names to their HTML IDs
+    const tabMap = {
+        'Outstanding Report': 3,
+        'Invoice Master': 1,
+        'Payment Receipts': 2,
+        'TDS Tracking': 4,
+        'Tax Reminders': 5
+    };
 
-    if (!number || !dateInput || !clientName || !amount) {
-        alert('Please fill all fields');
+    const tabsContainer = document.getElementById('tabsContainer');
+    tabsContainer.innerHTML = '';
+
+    tabs.forEach((tab, index) => {
+        const button = document.createElement('button');
+        button.className = 'tab-button' + (index === 0 ? ' active' : '');
+        button.textContent = tab;
+        const htmlTabId = tabMap[tab];
+
+        button.onclick = () => {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + htmlTabId).classList.add('active');
+            button.classList.add('active');
+
+            // Reload outstanding when tab opened
+            if (tab === 'Outstanding Report') {
+                loadOutstanding();
+            }
+        };
+        tabsContainer.appendChild(button);
+    });
+
+    // Show Outstanding Report tab on load
+    document.getElementById('tab-3').classList.add('active');
+}
+
+function importTallyExcel() {
+    const file = document.getElementById('excelFile').files[0];
+    if (!file) {
+        alert('Select file');
         return;
     }
 
-    const [year, month, day] = dateInput.split('-');
-    const dateFormatted = day + month + year;
-    const breakdown = calculateGST(amount);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const workbook = XLSX.read(e.target.result, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-    const invoiceData = {
-        number: number,
-        date: dateFormatted,
-        totalAmount: breakdown.total,
-        taxableAmount: breakdown.taxable,
-        gstAmount: breakdown.gst,
-        clientName: clientName,
-        narration: narration,
-        status: 'Unpaid',
-        paidAmount: 0,
-        userId: currentUser.uid,
-        userEmail: currentUser.email,
-        createdAt: new Date().toISOString()
+            const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+            let count = 0;
+
+            const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+            // Tally format: Rows 0-7 are headers, Row 8+ is data in pairs
+            // Odd rows (9,11,13...): Invoice data | Even rows (10,12,14...): Narration
+            for (let i = 8; i < allRows.length; i++) {
+                const row = allRows[i];
+                if (!row || row.length < 5) continue;
+
+                const vchNo = row[3];     // Column D - Vch No.
+                const amount = parseFloat(row[4]); // Column E - Debit Amount
+                const vchType = row[2];   // Column C - Vch Type
+                const clientName = row[1]; // Column B - Particulars (Client Name)
+                const dateCell = row[0];   // Column A - Date
+
+                // Check if this is an invoice row (has voucher number and amount)
+                if (vchNo && typeof vchNo === 'string' && vchNo.includes('/') && amount > 0) {
+                    // Get narration from next row if it exists and is a narration row
+                    let narration = '';
+                    if (i + 1 < allRows.length) {
+                        const nextRow = allRows[i + 1];
+                        // Check if next row is a narration row (no date in column A, no vch no in column D)
+                        if (nextRow && !nextRow[3] && nextRow[1]) {
+                            narration = String(nextRow[1]).trim();
+                        }
+                    }
+
+                    const breakdown = calculateGST(amount);
+                    // Pass dateCell as-is to formatDateDDMMYYYY (it handles all formats)
+                    const formattedDate = formatDateDDMMYYYY(dateCell);
+
+                    invoices.push({
+                        id: Date.now().toString() + Math.random(),
+                        number: vchNo,
+                        date: formattedDate,
+                        totalAmount: breakdown.total,
+                        taxableAmount: breakdown.taxable,
+                        gstAmount: breakdown.gst,
+                        clientName: String(clientName || '').trim(),
+                        narration: narration,
+                        status: 'Unpaid',
+                        paidAmount: 0,
+                        createdAt: new Date().toISOString()
+                    });
+                    count++;
+                }
+            }
+
+            if (count > 0) {
+                localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+                alert('✓ ' + count + ' invoices imported!');
+                loadInvoices();
+            } else {
+                alert('No invoices found');
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
     };
-
-    if (isDemo) {
-        const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
-        invoiceData.id = Date.now().toString() + Math.random();
-        invoices.push(invoiceData);
-        localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
-    } else {
-        await saveToFirestore('invoices', null, invoiceData);
-    }
-
-    alert('✓ Invoice added');
-    document.getElementById('invNumber').value = '';
-    document.getElementById('invDate').value = '';
-    document.getElementById('invClient').value = '';
-    document.getElementById('invAmount').value = '';
-    document.getElementById('invNarration').value = '';
-    loadInvoices();
-    loadOutstanding();
+    reader.readAsArrayBuffer(file);
 }
 
-async function loadInvoices() {
-    let invoices;
-    if (isDemo) {
-        invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
-    } else {
-        invoices = await loadFromFirestore('invoices', { field: 'userId', operator: '==', value: currentUser.uid });
-    }
-
+function loadInvoices() {
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
     const container = document.getElementById('invoiceList');
+
     if (invoices.length === 0) {
         container.innerHTML = '<p style="margin-top:16px;color:#666">No invoices</p>';
         return;
@@ -670,6 +662,8 @@ async function loadInvoices() {
 
     const select = document.getElementById('payInvoiceNumber');
     select.innerHTML = '<option value="">-- Select Invoice --</option>';
+
+    // Filter: only show invoices with outstanding balance (Unpaid or Partial status)
     const outstandingInvoices = invoices.filter(inv => {
         const outstanding = inv.totalAmount - inv.paidAmount;
         return outstanding > 0 && (inv.status === 'Unpaid' || inv.status === 'Partial');
@@ -682,51 +676,48 @@ async function loadInvoices() {
     });
 }
 
-async function deleteInvoice(id) {
-    if (confirm('Delete this invoice?')) {
-        if (isDemo) {
-            let invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
-            invoices = invoices.filter(i => i.id !== id);
-            localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
-        } else {
-            await deleteFromFirestore('invoices', id);
-        }
-        loadInvoices();
-        loadOutstanding();
-    }
-}
-
-function editInvoice(id) {
-    alert('Edit functionality - invoice ' + id);
-}
-
-async function cancelInvoice(id) {
-    if (confirm('Mark this invoice as Cancelled?')) {
-        if (isDemo) {
-            const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
-            const inv = invoices.find(i => i.id === id);
-            if (inv) {
-                inv.status = 'Cancelled';
-                inv.paidAmount = 0;
-                localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
-            }
-        } else {
-            await saveToFirestore('invoices', id, { status: 'Cancelled', paidAmount: 0 });
-        }
-        loadInvoices();
-        loadOutstanding();
-    }
-}
-
-// ==================== PAYMENT FUNCTIONS ====================
 function updatePaymentDetails() {
-    // TODO: implement payment details update
+    const invId = document.getElementById('payInvoiceNumber').value;
+
+    if (!invId) {
+        document.getElementById('paymentDetails').innerHTML = '';
+        return;
+    }
+
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    const inv = invoices.find(i => i.id === invId);
+
+    if (inv) {
+        const container = document.getElementById('paymentDetails');
+        const outstanding = inv.totalAmount - inv.paidAmount;
+
+        // Only allow selection if outstanding > 0
+        if (outstanding <= 0) {
+            document.getElementById('paymentDetails').innerHTML = '<div style="background:#fff3cd;padding:12px;border-radius:6px;margin-top:12px;color:#856404;"><strong>⚠️ This invoice is fully paid. Please select another invoice.</strong></div>';
+            document.getElementById('payInvoiceNumber').value = '';
+            return;
+        }
+
+        container.innerHTML = `<div style="background:#f5f5f5;padding:12px;border-radius:6px;margin-top:12px;">
+            <strong>Client:</strong> ${inv.clientName} | <strong>Date:</strong> ${inv.date} | <strong>Invoice Total:</strong> ₹${inv.totalAmount} | <strong>Already Paid:</strong> ₹${inv.paidAmount.toFixed(2)} | <strong>Outstanding:</strong> ₹${outstanding.toFixed(2)}
+        </div>`;
+
+        // Clear payment fields and recalculate when invoice is selected
+        document.getElementById('payAmountReceived').value = '';
+        document.getElementById('payTDS').value = '';
+        document.getElementById('payBalance').value = '';
+        document.getElementById('payTaxInvoiceNumber').value = '';
+        calculateBalanceAmount();
+    }
 }
+
 
 function formatPaymentDate() {
     const datePicker = document.getElementById('payDate');
     const dateDisplay = document.getElementById('payDateDisplay');
+
     if (datePicker.value) {
+        // datePicker.value is in YYYY-MM-DD format
         const [year, month, day] = datePicker.value.split('-');
         const formatted = day + '-' + month + '-' + year;
         dateDisplay.textContent = formatted;
@@ -736,65 +727,639 @@ function formatPaymentDate() {
 }
 
 function calculateBalanceAmount() {
-    // TODO: implement balance calculation
-}
-
-async function addPayment() {
-    alert('Payment recording - coming soon');
-}
-
-async function loadPayments() {
-    let payments = [];
-    if (isDemo) {
-        payments = JSON.parse(localStorage.getItem('payments_' + currentUser.email) || '[]');
-    } else {
-        payments = await loadFromFirestore('payments', { field: 'userId', operator: '==', value: currentUser.uid });
+    const invoiceId = document.getElementById('payInvoiceNumber').value;
+    if (!invoiceId || invoiceId === '-- Select Invoice --') {
+        document.getElementById('payBalance').value = '';
+        return;
     }
 
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    const inv = invoices.find(i => i.id === invoiceId);
+
+    if (!inv) {
+        document.getElementById('payBalance').value = '';
+        return;
+    }
+
+    const amtReceived = parseFloat(document.getElementById('payAmountReceived').value) || 0;
+    const tdsAmount = parseFloat(document.getElementById('payTDS').value) || 0;
+    const totalDeducted = amtReceived + tdsAmount;
+    const balance = inv.totalAmount - totalDeducted;
+    document.getElementById('payBalance').value = balance >= 0 ? balance.toFixed(2) : 0;
+}
+
+function addInvoiceManual() {
+    const number = document.getElementById('invNumber').value.trim();
+    const dateInput = document.getElementById('invDate').value; // YYYY-MM-DD
+    const clientName = document.getElementById('invClient').value.trim();
+    const amount = parseFloat(document.getElementById('invAmount').value);
+    const narration = document.getElementById('invNarration').value.trim();
+
+    if (!number || !dateInput || !clientName || !amount) {
+        alert('Please fill all fields');
+        return;
+    }
+
+    // Convert YYYY-MM-DD to DDMMYYYY
+    const [year, month, day] = dateInput.split('-');
+    const dateFormatted = day + month + year;
+
+    const breakdown = calculateGST(amount);
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+
+    invoices.push({
+        id: Date.now().toString() + Math.random(),
+        number: number,
+        date: dateFormatted,
+        totalAmount: breakdown.total,
+        taxableAmount: breakdown.taxable,
+        gstAmount: breakdown.gst,
+        clientName: clientName,
+        narration: narration,
+        status: 'Unpaid',
+        paidAmount: 0,
+        createdAt: new Date().toISOString()
+    });
+
+    localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+    alert('✓ Invoice added');
+
+    // Clear form
+    document.getElementById('invNumber').value = '';
+    document.getElementById('invDate').value = '';
+    document.getElementById('invClient').value = '';
+    document.getElementById('invAmount').value = '';
+    document.getElementById('invNarration').value = '';
+
+    loadInvoices();
+    loadOutstanding();
+}
+
+function deleteInvoice(id) {
+    if (confirm('Delete this invoice?')) {
+        let invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+        invoices = invoices.filter(i => i.id !== id);
+        localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+        loadInvoices();
+        loadOutstanding();
+    }
+}
+
+function editInvoice(id) {
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    const inv = invoices.find(i => i.id === id);
+
+    if (inv) {
+        // Convert DDMMYYYY back to YYYY-MM-DD for the date input
+        const dateStr = inv.date; // e.g., "25052026"
+        let dateValue = '';
+        if (dateStr.length === 8) {
+            const day = dateStr.substring(0, 2);
+            const month = dateStr.substring(2, 4);
+            const year = dateStr.substring(4, 8);
+            dateValue = year + '-' + month + '-' + day;
+        }
+
+        // Create edit form
+        const editForm = `
+            <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;">
+                <div style="background:#fff;padding:24px;border-radius:8px;max-width:500px;width:90%;max-height:90vh;overflow-y:auto;">
+                    <h3 style="margin-bottom:16px;">Edit Invoice ${inv.number}</h3>
+
+                    <div class="form-group">
+                        <label>Invoice Number</label>
+                        <input type="text" id="editInvoiceNumber" value="${inv.number}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Date (DD-MM-YYYY)</label>
+                        <input type="date" id="editDate" value="${dateValue}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Client Name</label>
+                        <input type="text" id="editClient" value="${inv.clientName}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Narration</label>
+                        <input type="text" id="editNarration" value="${inv.narration}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Amount (₹, including GST)</label>
+                        <input type="number" id="editAmount" value="${inv.totalAmount}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;">
+                    </div>
+
+                    <div style="display:flex;gap:12px;margin-top:20px;">
+                        <button onclick="saveEditInvoice('${id}')" style="flex:1;background:#0066cc;color:#fff;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Save</button>
+                        <button onclick="closeEditForm()" style="flex:1;background:#e0e0e0;color:#333;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Show form
+        const overlay = document.createElement('div');
+        overlay.id = 'editFormOverlay';
+        overlay.innerHTML = editForm;
+        document.body.appendChild(overlay);
+    }
+}
+
+function saveEditInvoice(id) {
+    const invoiceNumber = document.getElementById('editInvoiceNumber').value.trim();
+    const dateInput = document.getElementById('editDate').value;
+    const clientName = document.getElementById('editClient').value.trim();
+    const narration = document.getElementById('editNarration').value.trim();
+    const amount = parseFloat(document.getElementById('editAmount').value);
+
+    if (!invoiceNumber || !dateInput || !clientName || !amount) {
+        alert('Please fill all required fields');
+        return;
+    }
+
+    // Convert YYYY-MM-DD to DDMMYYYY
+    const [year, month, day] = dateInput.split('-');
+    const dateFormatted = day + month + year;
+
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    const inv = invoices.find(i => i.id === id);
+
+    if (inv) {
+        const breakdown = calculateGST(amount);
+        inv.number = invoiceNumber;
+        inv.date = dateFormatted;
+        inv.clientName = clientName;
+        inv.narration = narration;
+        inv.totalAmount = breakdown.total;
+        inv.taxableAmount = breakdown.taxable;
+        inv.gstAmount = breakdown.gst;
+
+        localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+        closeEditForm();
+        loadInvoices();
+        loadOutstanding();
+        alert('✓ Invoice updated');
+    }
+}
+
+function closeEditForm() {
+    const overlay = document.getElementById('editFormOverlay');
+    if (overlay) {
+        overlay.remove();
+    }
+}
+
+function cancelInvoice(id) {
+    if (confirm('Mark this invoice as Cancelled?')) {
+        const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+        const inv = invoices.find(i => i.id === id);
+
+        if (inv) {
+            inv.status = 'Cancelled';
+            inv.paidAmount = 0;
+
+            localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+            loadInvoices();
+            loadOutstanding();
+        }
+    }
+}
+
+function addPayment() {
+    try {
+        const invoiceId = document.getElementById('payInvoiceNumber').value;
+        const dateInput = document.getElementById('payDate').value;
+        const amountReceivedStr = document.getElementById('payAmountReceived').value;
+        const tdsStr = document.getElementById('payTDS').value;
+
+        console.log('Invoice ID:', invoiceId);
+        console.log('Date:', dateInput);
+        console.log('Amount Received String:', amountReceivedStr);
+
+        if (!invoiceId || invoiceId === '-- Select Invoice --') {
+            alert('Please select an invoice');
+            return;
+        }
+
+        if (!dateInput) {
+            alert('Please select a payment date');
+            return;
+        }
+
+        if (!amountReceivedStr || amountReceivedStr.trim() === '') {
+            alert('Please enter amount received');
+            return;
+        }
+
+        const amountReceived = parseFloat(amountReceivedStr);
+        const tds = parseFloat(tdsStr) || 0;
+
+        if (isNaN(amountReceived) || amountReceived <= 0) {
+            alert('Amount Received must be greater than 0');
+            return;
+        }
+
+        // Convert date from YYYY-MM-DD to DDMMYYYY
+        const [year, month, day] = dateInput.split('-');
+        const date = day + month + year;
+
+        let invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+        const inv = invoices.find(i => i.id === invoiceId);
+
+        if (!inv) {
+            alert('Invoice not found');
+            return;
+        }
+
+        // Calculate remaining balance on invoice after this payment
+        const totalDeducted = amountReceived + tds;
+        const remainingBalance = inv.totalAmount - totalDeducted;
+
+        const payments = JSON.parse(localStorage.getItem('payments_' + currentUser.email) || '[]');
+
+        payments.push({
+            id: Date.now().toString(),
+            invoiceId: invoiceId,
+            date: date,
+            amountReceived: amountReceived,
+            tds: tds,
+            balance: remainingBalance >= 0 ? remainingBalance : 0,
+            createdAt: new Date().toISOString()
+        });
+        localStorage.setItem('payments_' + currentUser.email, JSON.stringify(payments));
+
+        console.log('Payment saved:', payments[payments.length - 1]);
+
+        console.log('Invoice found:', inv);
+
+        if (inv) {
+            // Both Amount Received and TDS count toward invoice payment
+            inv.paidAmount = (inv.paidAmount || 0) + amountReceived + tds;
+            inv.status = inv.paidAmount >= inv.totalAmount ? 'Paid' : 'Partial';
+
+            // Store original invoice number before changing it
+            if (!inv.originalNumber) {
+                inv.originalNumber = inv.number;
+            }
+
+            // Update invoice number if tax invoice number provided
+            const taxInvNumber = document.getElementById('payTaxInvoiceNumber').value.trim();
+            if (taxInvNumber) {
+                inv.number = taxInvNumber;
+            }
+
+            console.log('Updated invoice:', inv);
+            localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+        }
+
+        alert('✓ Payment recorded successfully!\nAmount Received: ₹' + amountReceived + '\nRemaining Balance: ₹' + (remainingBalance >= 0 ? remainingBalance.toFixed(2) : 0));
+        document.getElementById('payAmountReceived').value = '';
+        document.getElementById('payBalance').value = '';
+        document.getElementById('payTDS').value = '';
+        document.getElementById('payDate').value = '';
+        document.getElementById('payTaxInvoiceNumber').value = '';
+        document.getElementById('payInvoiceNumber').value = '-- Select Invoice --';
+        document.getElementById('paymentDetails').innerHTML = '';
+        loadPayments();
+        loadInvoices();
+        loadOutstanding();
+    } catch (err) {
+        alert('Error recording payment: ' + err.message);
+        console.error('Payment error:', err);
+    }
+}
+
+function loadPayments() {
+    const payments = JSON.parse(localStorage.getItem('payments_' + currentUser.email) || '[]');
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
     const container = document.getElementById('paymentList');
+
     if (payments.length === 0) {
         container.innerHTML = '<p style="margin-top:16px;color:#666">No payments</p>';
         return;
     }
 
-    let html = '<div style="margin-top:24px;"><div style="font-size:13px;font-weight:600;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e0e0e0;">Payment History</div><table><tr><th>Invoice</th><th>Client</th><th>Date</th><th>Amount Received</th><th>TDS Amount</th><th>Balance Amount</th></tr>';
+    let html = '<div style="margin-top:24px;"><div style="font-size:13px;font-weight:600;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e0e0e0;">Payment History</div><table><tr><th>Invoice</th><th>Client</th><th>Date</th><th>Amount Received</th><th>TDS Amount</th><th>Balance Amount</th><th>Actions</th></tr>';
     payments.forEach(p => {
+        const inv = invoices.find(i => i.id === p.invoiceId);
         const dateDisplay = formatDateDDMMYYYYDisplay(p.date);
         html += `<tr>
-            <td>INV</td>
-            <td>Client</td>
+            <td>${inv?.number}</td>
+            <td>${inv?.clientName}</td>
             <td>${dateDisplay}</td>
             <td>₹${(p.amountReceived || 0).toFixed(2)}</td>
             <td>₹${(p.tds || 0).toFixed(2)}</td>
             <td>₹${(p.balance || 0).toFixed(2)}</td>
+            <td>
+                <button class="icon-btn" onclick="editPayment('${p.id}')" title="Edit">✏️</button>
+                <button class="icon-btn" onclick="deletePayment('${p.id}')" title="Delete">🗑</button>
+            </td>
         </tr>`;
     });
     html += '</table></div>';
     container.innerHTML = html;
-}
 
-// ==================== OUTSTANDING REPORT ====================
-async function loadOutstanding() {
-    let invoices = [];
-    if (isDemo) {
-        invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    // TDS Tracking - Two Tables: Received & Not Received
+    const tdsList = document.getElementById('tdsList');
+    let tdsHtml = '<div style="margin-top:16px;">';
+
+    const tdsTracking = JSON.parse(localStorage.getItem('tdsTracking_' + currentUser.email) || '{}');
+    const prevTds = JSON.parse(localStorage.getItem('prevTds_' + currentUser.email) || '[]');
+
+    // Separate into Received and Not Received
+    let receivedTdsHtml = '';
+    let notReceivedTdsHtml = '';
+    let totalReceivedTDS = 0;
+    let totalNotReceivedTDS = 0;
+
+    // Current year TDS from payments
+    payments.forEach(p => {
+        const inv = invoices.find(i => i.id === p.invoiceId);
+        if (p.tds > 0 && inv) {
+            const tdsKey = p.id;
+            const tdsRecord = tdsTracking[tdsKey] || { status26as: 'Not Rcvd' };
+            const row = `<tr>
+                <td>${inv.number}</td>
+                <td>${inv.clientName}</td>
+                <td>₹${inv.totalAmount.toFixed(2)}</td>
+                <td>₹${p.tds.toFixed(2)}</td>
+                <td>${formatDateDDMMYYYYDisplay(inv.date)}</td>
+                <td>${inv.narration}</td>
+                <td><button class="icon-btn" onclick="editTdsStatus('${p.id}')" title="Edit 26AS Status">✏️</button></td>
+            </tr>`;
+
+            if (tdsRecord.status26as === 'Yes') {
+                receivedTdsHtml += row;
+                totalReceivedTDS += p.tds;
+            } else {
+                notReceivedTdsHtml += row;
+                totalNotReceivedTDS += p.tds;
+            }
+        }
+    });
+
+    // Previous years TDS
+    prevTds.forEach(p => {
+        const row = `<tr>
+            <td>${p.invoiceNo}</td>
+            <td>${p.clientName}</td>
+            <td>-</td>
+            <td>₹${p.tdsAmount.toFixed(2)}</td>
+            <td>${p.year}</td>
+            <td>${p.narration || '-'}</td>
+            <td><button class="icon-btn" onclick="deletePreviousTds('${p.id}')" title="Delete">🗑</button></td>
+        </tr>`;
+
+        if (p.tds26asStatus === 'Yes') {
+            receivedTdsHtml += row;
+            totalReceivedTDS += p.tdsAmount;
+        } else {
+            notReceivedTdsHtml += row;
+            totalNotReceivedTDS += p.tdsAmount;
+        }
+    });
+
+    // Received 26AS Table
+    tdsHtml += '<div style="font-size:13px;font-weight:600;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e0e0e0;">✓ 26AS Received</div>';
+    if (receivedTdsHtml) {
+        tdsHtml += '<table><tr><th>Invoice</th><th>Client</th><th>Amount (₹)</th><th>TDS (₹)</th><th>Date</th><th>Narration</th><th>Action</th></tr>';
+        tdsHtml += receivedTdsHtml;
+        tdsHtml += `<tr style="font-weight:700;background:#f5f5f5"><td colspan="3">TOTAL RECEIVED</td><td>₹${totalReceivedTDS.toFixed(2)}</td><td colspan="3"></td></tr></table>`;
     } else {
-        invoices = await loadFromFirestore('invoices', { field: 'userId', operator: '==', value: currentUser.uid });
+        tdsHtml += '<p style="color:#666;margin-bottom:24px;">No 26AS received entries</p>';
     }
 
+    // Not Received 26AS Table
+    tdsHtml += '<div style="font-size:13px;font-weight:600;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e0e0e0;margin-top:24px;">✗ 26AS Not Received</div>';
+    if (notReceivedTdsHtml) {
+        tdsHtml += '<table><tr><th>Invoice</th><th>Client</th><th>Amount (₹)</th><th>TDS (₹)</th><th>Date</th><th>Narration</th><th>Action</th></tr>';
+        tdsHtml += notReceivedTdsHtml;
+        tdsHtml += `<tr style="font-weight:700;background:#f5f5f5"><td colspan="3">TOTAL PENDING</td><td>₹${totalNotReceivedTDS.toFixed(2)}</td><td colspan="3"></td></tr></table>`;
+    } else {
+        tdsHtml += '<p style="color:#666;">No 26AS pending entries</p>';
+    }
+
+    tdsHtml += '</div>';
+
+    const totalTDS = totalReceivedTDS + totalNotReceivedTDS;
+    if (totalTDS > 0) {
+        tdsList.innerHTML = tdsHtml;
+    } else {
+        tdsList.innerHTML = '<p style="margin-top:16px;color:#666">No TDS recorded</p>';
+    }
+}
+
+function editPayment(paymentId) {
+    const payments = JSON.parse(localStorage.getItem('payments_' + currentUser.email) || '[]');
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    const payment = payments.find(p => p.id === paymentId);
+
+    if (!payment) return;
+
+    const inv = invoices.find(i => i.id === payment.invoiceId);
+    const dateStr = payment.date; // DDMMYYYY format
+    let dateValue = '';
+    if (dateStr && dateStr.length === 8) {
+        const day = dateStr.substring(0, 2);
+        const month = dateStr.substring(2, 4);
+        const year = dateStr.substring(4, 8);
+        dateValue = year + '-' + month + '-' + day;
+    }
+
+    const editForm = `
+        <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;">
+            <div style="background:#fff;padding:24px;border-radius:8px;max-width:500px;width:90%;max-height:90vh;overflow-y:auto;">
+                <h3 style="margin-bottom:16px;">Edit Payment - ${inv?.number}</h3>
+
+                <input type="hidden" id="editPayInvoiceId" value="${payment.invoiceId}">
+
+                <div class="form-group">
+                    <label>Invoice Number</label>
+                    <input type="text" id="editPayInvoiceNumber" value="${inv?.number}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;">
+                </div>
+
+                <div class="form-group">
+                    <label>Payment Date (DD-MM-YYYY)</label>
+                    <input type="date" id="editPayDate" value="${dateValue}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;">
+                </div>
+
+                <div class="form-group">
+                    <label>Amount Received (₹)</label>
+                    <input type="number" id="editPayAmtRecd" value="${payment.amountReceived || 0}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;" oninput="updateEditBalance()">
+                </div>
+
+                <div class="form-group">
+                    <label>TDS Amount (₹)</label>
+                    <input type="number" id="editPayTDS" value="${payment.tds || 0}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;" oninput="updateEditBalance()">
+                </div>
+
+                <div class="form-group">
+                    <label>Balance Amount (₹)</label>
+                    <input type="number" id="editPayBalance" value="${payment.balance || 0}" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;background:#f5f5f5;" readonly>
+                    <small style="color:#666;">Remaining Outstanding (Invoice Amount - Amount Received - TDS)</small>
+                </div>
+
+                <div style="display:flex;gap:12px;margin-top:20px;">
+                    <button onclick="saveEditPayment('${paymentId}')" style="flex:1;background:#0066cc;color:#fff;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Save</button>
+                    <button onclick="closeEditPaymentForm()" style="flex:1;background:#e0e0e0;color:#333;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'editPaymentFormOverlay';
+    overlay.innerHTML = editForm;
+    document.body.appendChild(overlay);
+}
+
+function updateEditBalance() {
+    // Get the invoice ID from the edit form (we need to store it when opening the form)
+    const invoiceId = document.getElementById('editPayInvoiceId').value;
+
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    const inv = invoices.find(i => i.id === invoiceId);
+
+    if (!inv) {
+        document.getElementById('editPayBalance').value = '';
+        return;
+    }
+
+    const amtRecd = parseFloat(document.getElementById('editPayAmtRecd').value) || 0;
+    const tdsAmount = parseFloat(document.getElementById('editPayTDS').value) || 0;
+    const totalDeducted = amtRecd + tdsAmount;
+    const balance = inv.totalAmount - totalDeducted;
+    document.getElementById('editPayBalance').value = balance >= 0 ? balance.toFixed(2) : 0;
+}
+
+function saveEditPayment(paymentId) {
+    const invoiceNumber = document.getElementById('editPayInvoiceNumber').value.trim();
+    const dateInput = document.getElementById('editPayDate').value;
+    const amountReceived = parseFloat(document.getElementById('editPayAmtRecd').value);
+    const tds = parseFloat(document.getElementById('editPayTDS').value) || 0;
+
+    if (!invoiceNumber || !dateInput || amountReceived === '' || isNaN(amountReceived)) {
+        alert('Please fill all required fields');
+        return;
+    }
+
+    const [year, month, day] = dateInput.split('-');
+    const dateFormatted = day + month + year;
+
+    const payments = JSON.parse(localStorage.getItem('payments_' + currentUser.email) || '[]');
+    const payment = payments.find(p => p.id === paymentId);
+
+    if (payment) {
+        const oldAmountReceived = payment.amountReceived || 0;
+        const oldTds = payment.tds || 0;
+
+        // Get invoice to calculate correct balance
+        let invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+        const inv = invoices.find(i => i.id === payment.invoiceId);
+
+        let newBalance = 0;
+        if (inv) {
+            const totalDeducted = amountReceived + tds;
+            newBalance = inv.totalAmount - totalDeducted;
+            newBalance = newBalance >= 0 ? newBalance : 0;
+        }
+
+        payment.date = dateFormatted;
+        payment.amountReceived = amountReceived;
+        payment.tds = tds;
+        payment.balance = newBalance;
+
+        // Update invoice paidAmount (both received amount and TDS count toward payment)
+        if (inv) {
+            inv.number = invoiceNumber;
+            inv.paidAmount = (inv.paidAmount || 0) - oldAmountReceived - oldTds + amountReceived + tds;
+            inv.status = inv.paidAmount >= inv.totalAmount ? 'Paid' : 'Partial';
+        }
+
+        localStorage.setItem('payments_' + currentUser.email, JSON.stringify(payments));
+        localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+
+        closeEditPaymentForm();
+        loadPayments();
+        loadInvoices();
+        loadOutstanding();
+        alert('✓ Payment updated');
+    }
+}
+
+function closeEditPaymentForm() {
+    const overlay = document.getElementById('editPaymentFormOverlay');
+    if (overlay) {
+        overlay.remove();
+    }
+}
+
+function deletePayment(paymentId) {
+    if (confirm('Delete this payment record?')) {
+        const payments = JSON.parse(localStorage.getItem('payments_' + currentUser.email) || '[]');
+        const payment = payments.find(p => p.id === paymentId);
+
+        if (payment) {
+            // Update invoice paidAmount (both received amount and TDS)
+            let invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+            const inv = invoices.find(i => i.id === payment.invoiceId);
+            if (inv) {
+                const totalToRemove = (payment.amountReceived || 0) + (payment.tds || 0);
+                inv.paidAmount = Math.max(0, (inv.paidAmount || 0) - totalToRemove);
+                inv.status = inv.paidAmount <= 0 ? 'Unpaid' : (inv.paidAmount >= inv.totalAmount ? 'Paid' : 'Partial');
+
+                // Restore original invoice number if it was changed
+                if (inv.originalNumber && inv.number !== inv.originalNumber) {
+                    inv.number = inv.originalNumber;
+                }
+            }
+
+            // Remove payment
+            const updatedPayments = payments.filter(p => p.id !== paymentId);
+            localStorage.setItem('payments_' + currentUser.email, JSON.stringify(updatedPayments));
+            localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+
+            // Also delete corresponding TDS tracking entry
+            const tdsTracking = JSON.parse(localStorage.getItem('tdsTracking_' + currentUser.email) || '{}');
+            if (tdsTracking[paymentId]) {
+                delete tdsTracking[paymentId];
+                localStorage.setItem('tdsTracking_' + currentUser.email, JSON.stringify(tdsTracking));
+            }
+
+            loadPayments();
+            loadInvoices();
+            loadOutstanding();
+            alert('✓ Payment and TDS entry deleted');
+        }
+    }
+}
+
+function loadOutstanding() {
+    // Show only Pending and Partial invoices grouped by client name
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+
+    // Filter: show only Unpaid and Partial (exclude Paid and Cancelled)
     let filtered = invoices.filter(i => i.status === 'Unpaid' || i.status === 'Partial');
+
     if (filtered.length === 0) {
         document.getElementById('reportContainer').innerHTML = '<p style="margin-top:16px;color:#666">No outstanding invoices</p>';
         return;
     }
 
+    // Group by client name
     const groupedByClient = {};
     let grandTotal = 0;
+
     filtered.forEach(inv => {
         const out = inv.totalAmount - inv.paidAmount;
         if (out > 0) {
             if (!groupedByClient[inv.clientName]) {
-                groupedByClient[inv.clientName] = { invoices: [], total: 0 };
+                groupedByClient[inv.clientName] = {
+                    invoices: [],
+                    total: 0
+                };
             }
             groupedByClient[inv.clientName].invoices.push({
                 number: inv.number,
@@ -807,7 +1372,9 @@ async function loadOutstanding() {
         }
     });
 
+    // Build HTML grouped by client
     let html = '<div style="margin-top:16px;">';
+
     Object.keys(groupedByClient).sort().forEach(clientName => {
         const clientData = groupedByClient[clientName];
         html += `<div style="margin-bottom:24px;padding:16px;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:6px;">
@@ -835,7 +1402,9 @@ async function loadOutstanding() {
         html += `<tr style="background:#f0f0f0;font-weight:600;">
             <td colspan="4" style="padding:8px;border:1px solid #e0e0e0;text-align:right;">Subtotal:</td>
             <td style="padding:8px;border:1px solid #e0e0e0;text-align:right;">₹${clientData.total.toFixed(2)}</td>
-        </tr></table></div>`;
+        </tr></table>`;
+
+        html += `</div>`;
     });
 
     html += `<div style="padding:16px;background:#0066cc;color:#fff;border-radius:6px;font-weight:600;text-align:right;">
@@ -845,12 +1414,132 @@ async function loadOutstanding() {
     document.getElementById('reportContainer').innerHTML = html;
 }
 
-function exportOutstandingToPDF() {
-    alert('PDF export coming soon');
+function generateOutstandingReport() {
+    // Legacy function - now using loadOutstanding() instead
+    loadOutstanding();
 }
 
-// ==================== REMINDERS ====================
-async function addReminder() {
+function copyText(text) {
+    navigator.clipboard.writeText(text).then(() => alert('✓ Copied!'));
+}
+
+function exportOutstandingToPDF() {
+    // Get the current outstanding data
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    let filtered = invoices.filter(i => i.status === 'Unpaid' || i.status === 'Partial');
+
+    if (filtered.length === 0) {
+        alert('No outstanding invoices to export');
+        return;
+    }
+
+    // Group by client name
+    const groupedByClient = {};
+    let grandTotal = 0;
+
+    filtered.forEach(inv => {
+        const out = inv.totalAmount - inv.paidAmount;
+        if (out > 0) {
+            if (!groupedByClient[inv.clientName]) {
+                groupedByClient[inv.clientName] = {
+                    invoices: [],
+                    total: 0
+                };
+            }
+            groupedByClient[inv.clientName].invoices.push({
+                number: inv.number,
+                date: inv.date,
+                narration: inv.narration,
+                balance: out
+            });
+            groupedByClient[inv.clientName].total += out;
+            grandTotal += out;
+        }
+    });
+
+    // Build printable HTML - Compact tabular format
+    let printHtml = `
+        <html>
+        <head>
+            <title>Outstanding Report</title>
+            <style>
+                * { margin: 0; padding: 0; }
+                body { font-family: Arial, sans-serif; padding: 10px; color: #333; font-size: 11px; }
+                h1 { text-align: center; font-size: 16px; margin-bottom: 10px; color: #000; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
+                th, td { padding: 4px 6px; text-align: left; border: 1px solid #000; }
+                th { background: #e0e0e0; font-weight: bold; font-size: 10px; }
+                td { font-size: 10px; }
+                .client-header { background: #d0d0d0; font-weight: bold; padding: 3px 6px; border: 1px solid #000; }
+                .sr { width: 25px; text-align: center; }
+                .amount { width: 90px; text-align: right; }
+                .narration { width: auto; }
+                .date { width: 75px; text-align: center; }
+                .invoice { width: 75px; text-align: center; }
+                .subtotal { background: #f5f5f5; font-weight: bold; }
+                .grand-total { background: #000; color: #fff; font-weight: bold; padding: 4px 6px; }
+                .timestamp { text-align: right; font-size: 9px; color: #666; margin-top: 8px; }
+            </style>
+        </head>
+        <body>
+            <h1>Outstanding Invoice Report</h1>
+            <table>
+                <tr><th colspan="5" style="text-align:center;">CLIENT WISE OUTSTANDING SUMMARY</th></tr>
+            </table>
+    `;
+
+    Object.keys(groupedByClient).sort().forEach(clientName => {
+        const clientData = groupedByClient[clientName];
+        printHtml += `<div class="client-header">${clientName}</div>
+            <table>
+                <tr>
+                    <th class="sr">Sr</th>
+                    <th class="amount">Amount (₹)</th>
+                    <th class="narration">Narration</th>
+                    <th class="date">Date</th>
+                    <th class="invoice">Invoice</th>
+                </tr>`;
+
+        clientData.invoices.forEach((inv, idx) => {
+            const dateDisplay = formatDateDDMMYYYYDisplay(inv.date);
+            printHtml += `<tr>
+                <td class="sr">${idx + 1}</td>
+                <td class="amount">${inv.balance.toFixed(2)}</td>
+                <td class="narration">${inv.narration}</td>
+                <td class="date">${dateDisplay}</td>
+                <td class="invoice">${inv.number}</td>
+            </tr>`;
+        });
+
+        printHtml += `</table><table>
+        <tr class="subtotal">
+            <td colspan="4" style="text-align:right;padding:3px 6px;">Subtotal:</td>
+            <td class="amount">${clientData.total.toFixed(2)}</td>
+        </tr></table>`;
+    });
+
+    const currentDate = new Date().toLocaleDateString('en-IN');
+    printHtml += `
+            <table style="margin-top:4px;">
+                <tr class="grand-total">
+                    <td colspan="4" style="text-align:right;">TOTAL OUTSTANDING:</td>
+                    <td class="amount" style="background:#000;color:#fff;">₹${grandTotal.toFixed(2)}</td>
+                </tr>
+            </table>
+            <div class="timestamp">Generated: ${currentDate}</div>
+        </body>
+        </html>
+    `;
+
+    // Open in new window for printing/PDF export
+    const printWindow = window.open('', '', 'height=600,width=900');
+    printWindow.document.write(printHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); }, 250);
+}
+
+function addReminder() {
     const type = document.getElementById('reminderType').value;
     const date = document.getElementById('reminderDueDate').value;
 
@@ -859,124 +1548,269 @@ async function addReminder() {
         return;
     }
 
-    const reminderData = {
-        type, date,
-        done: false,
-        userId: currentUser.uid,
-        userEmail: currentUser.email,
-        createdAt: new Date().toISOString()
-    };
-
-    if (isDemo) {
-        const reminders = JSON.parse(localStorage.getItem('reminders_' + currentUser.email) || '[]');
-        reminderData.id = Date.now().toString();
-        reminders.push(reminderData);
-        localStorage.setItem('reminders_' + currentUser.email, JSON.stringify(reminders));
-    } else {
-        await saveToFirestore('reminders', null, reminderData);
-    }
-
+    const reminders = JSON.parse(localStorage.getItem('reminders_' + currentUser.email) || '[]');
+    reminders.push({ id: Date.now().toString(), type, date, done: false });
+    localStorage.setItem('reminders_' + currentUser.email, JSON.stringify(reminders));
     alert('✓ Reminder added');
     document.getElementById('reminderType').value = 'Advance Tax';
     document.getElementById('reminderDueDate').value = '';
     loadReminders();
 }
 
-async function loadReminders() {
-    let reminders = [];
-    if (isDemo) {
-        reminders = JSON.parse(localStorage.getItem('reminders_' + currentUser.email) || '[]');
-    } else {
-        reminders = await loadFromFirestore('reminders', { field: 'userId', operator: '==', value: currentUser.uid });
-    }
-
+function loadReminders() {
+    const reminders = JSON.parse(localStorage.getItem('reminders_' + currentUser.email) || '[]');
     const container = document.getElementById('reminderList');
+
     if (reminders.length === 0) {
         container.innerHTML = '<p style="margin-top:16px;color:#666">No reminders</p>';
         return;
     }
 
-    let html = '<table><tr><th>Type</th><th>Due Date (DDMMYYYY)</th><th>Days Left</th></tr>';
+    let html = '<table><tr><th>Type</th><th>Due Date (DDMMYYYY)</th><th>Days Left</th><th>Done</th></tr>';
     reminders.forEach(r => {
-        const dueStr = r.date;
+        const dueStr = r.date; // DDMMYYYY format
         const d = parseInt(dueStr.substring(0, 2));
         const m = parseInt(dueStr.substring(2, 4));
         const y = parseInt(dueStr.substring(4, 8));
         const dueDate = new Date(y, m - 1, d);
         const days = Math.ceil((dueDate - new Date()) / (1000*60*60*24));
-        html += `<tr><td>${r.type}</td><td>${r.date}</td><td>${days}d</td></tr>`;
+        html += `<tr><td>${r.type}</td><td>${r.date}</td><td>${days}d</td><td><input type="checkbox" ${r.done?'checked':''}></td></tr>`;
     });
     html += '</table>';
     container.innerHTML = html;
 }
 
-// ==================== TDS FUNCTIONS ====================
-async function addPreviousTds() {
-    alert('Previous TDS function - coming soon');
+function editTdsStatus(paymentId) {
+    const tdsTracking = JSON.parse(localStorage.getItem('tdsTracking_' + currentUser.email) || '{}');
+    const tdsRecord = tdsTracking[paymentId] || { status26as: 'Not Rcvd' };
+
+    const editForm = `
+        <div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;">
+            <div style="background:#fff;padding:24px;border-radius:8px;max-width:400px;width:90%;max-height:90vh;overflow-y:auto;">
+                <h3 style="margin-bottom:16px;">Edit 26AS Status</h3>
+
+                <div class="form-group">
+                    <label>26AS Received?</label>
+                    <select id="edit26asStatus" style="width:100%;padding:10px;border:1px solid #d0d0d0;border-radius:6px;">
+                        <option value="Not Rcvd">Not Received</option>
+                        <option value="Yes">Yes</option>
+                        <option value="Partial">Partial</option>
+                    </select>
+                </div>
+
+                <div style="display:flex;gap:12px;margin-top:20px;">
+                    <button onclick="saveTdsStatus('${paymentId}')" style="flex:1;background:#0066cc;color:#fff;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Save</button>
+                    <button onclick="closeTdsEditForm()" style="flex:1;background:#e0e0e0;color:#333;padding:10px;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'tdsEditFormOverlay';
+    overlay.innerHTML = editForm;
+    document.body.appendChild(overlay);
+
+    // Set current value
+    setTimeout(() => {
+        document.getElementById('edit26asStatus').value = tdsRecord.status26as;
+    }, 100);
+}
+
+function saveTdsStatus(paymentId) {
+    const status26as = document.getElementById('edit26asStatus').value;
+
+    if (!status26as) {
+        alert('Please select a status');
+        return;
+    }
+
+    const tdsTracking = JSON.parse(localStorage.getItem('tdsTracking_' + currentUser.email) || '{}');
+    tdsTracking[paymentId] = {
+        status26as: status26as,
+        updatedAt: new Date().toISOString()
+    };
+
+    console.log('Saving TDS status for', paymentId, ':', tdsTracking[paymentId]);
+    localStorage.setItem('tdsTracking_' + currentUser.email, JSON.stringify(tdsTracking));
+    closeTdsEditForm();
+
+    // Small delay to ensure localStorage is written
+    setTimeout(() => {
+        loadPayments();
+        alert('✓ 26AS Status updated to: ' + status26as);
+    }, 50);
+}
+
+function closeTdsEditForm() {
+    const overlay = document.getElementById('tdsEditFormOverlay');
+    if (overlay) {
+        overlay.remove();
+    }
+}
+
+function addPreviousTds() {
+    const clientName = document.getElementById('prevTdsClient').value.trim();
+    const year = document.getElementById('prevTdsYear').value.trim();
+    const tdsAmount = parseFloat(document.getElementById('prevTdsAmount').value);
+    const invoiceNo = document.getElementById('prevTdsInvoice').value.trim();
+    const tds26asStatus = document.getElementById('prevTds26asStatus').value;
+
+    if (!clientName || !year || !tdsAmount || !invoiceNo) {
+        alert('Please fill all fields');
+        return;
+    }
+
+    const prevTds = JSON.parse(localStorage.getItem('prevTds_' + currentUser.email) || '[]');
+    prevTds.push({
+        id: Date.now().toString(),
+        clientName: clientName,
+        year: year,
+        tdsAmount: tdsAmount,
+        invoiceNo: invoiceNo,
+        tds26asStatus: tds26asStatus,
+        createdAt: new Date().toISOString()
+    });
+
+    localStorage.setItem('prevTds_' + currentUser.email, JSON.stringify(prevTds));
+    alert('✓ Previous TDS added');
+
+    document.getElementById('prevTdsClient').value = '';
+    document.getElementById('prevTdsYear').value = '';
+    document.getElementById('prevTdsAmount').value = '';
+    document.getElementById('prevTdsInvoice').value = '';
+    document.getElementById('prevTds26asStatus').value = 'No';
+
+    loadPayments();
+}
+
+function deletePreviousTds(id) {
+    if (confirm('Delete this previous TDS record?')) {
+        let prevTds = JSON.parse(localStorage.getItem('prevTds_' + currentUser.email) || '[]');
+        prevTds = prevTds.filter(p => p.id !== id);
+        localStorage.setItem('prevTds_' + currentUser.email, JSON.stringify(prevTds));
+        loadPayments();
+    }
 }
 
 function exportTdsReportToPDF() {
-    alert('TDS PDF export coming soon');
-}
+    const payments = JSON.parse(localStorage.getItem('payments_' + currentUser.email) || '[]');
+    const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    const prevTds = JSON.parse(localStorage.getItem('prevTds_' + currentUser.email) || '[]');
 
-// ==================== CLIENT DASHBOARD ====================
-async function loadClientDashboardList() {
-    let invoices = [];
-    if (isDemo) {
-        invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
-    } else {
-        invoices = await loadFromFirestore('invoices', { field: 'userId', operator: '==', value: currentUser.uid });
+    let totalCurrentTDS = 0;
+    let totalPrevTDS = 0;
+
+    payments.forEach(p => {
+        if (p.tds > 0) totalCurrentTDS += p.tds;
+    });
+
+    prevTds.forEach(p => {
+        totalPrevTDS += p.tdsAmount;
+    });
+
+    const currentDate = new Date().toLocaleDateString('en-IN');
+
+    let printHtml = `
+        <html>
+        <head>
+            <title>TDS Tracking Report</title>
+            <style>
+                * { margin: 0; padding: 0; }
+                body { font-family: Arial, sans-serif; padding: 10px; color: #333; font-size: 11px; }
+                h1 { text-align: center; font-size: 16px; margin-bottom: 10px; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
+                th, td { padding: 4px 6px; text-align: left; border: 1px solid #000; }
+                th { background: #e0e0e0; font-weight: bold; font-size: 10px; }
+                .subtotal { background: #f5f5f5; font-weight: bold; }
+                .grand-total { background: #000; color: #fff; font-weight: bold; }
+                .timestamp { text-align: right; font-size: 9px; color: #666; margin-top: 8px; }
+            </style>
+        </head>
+        <body>
+            <h1>TDS Tracking Report - Current & Previous Years</h1>
+            <table>
+                <tr>
+                    <th>Invoice</th>
+                    <th>Client</th>
+                    <th>Amount (₹)</th>
+                    <th>TDS (₹)</th>
+                    <th>Year/Date</th>
+                    <th>26AS</th>
+                </tr>`;
+
+    // Current year TDS
+    if (totalCurrentTDS > 0) {
+        const tdsTracking = JSON.parse(localStorage.getItem('tdsTracking_' + currentUser.email) || '{}');
+        printHtml += `<tr><td colspan="6" style="background:#d0d0d0;font-weight:bold;">CURRENT YEAR TDS</td></tr>`;
+        payments.forEach(p => {
+            const inv = invoices.find(i => i.id === p.invoiceId);
+            if (p.tds > 0 && inv) {
+                const dateDisplay = formatDateDDMMYYYYDisplay(inv.date);
+                const tdsRecord = tdsTracking[p.id] || { status26as: 'Not Rcvd' };
+                printHtml += `<tr>
+                    <td>${inv.number}</td>
+                    <td>${inv.clientName}</td>
+                    <td>${inv.totalAmount.toFixed(2)}</td>
+                    <td>${p.tds.toFixed(2)}</td>
+                    <td>${dateDisplay}</td>
+                    <td>${tdsRecord.status26as}</td>
+                </tr>`;
+            }
+        });
+        printHtml += `<tr class="subtotal">
+            <td colspan="3">Current Year TDS:</td>
+            <td>${totalCurrentTDS.toFixed(2)}</td>
+            <td colspan="2"></td>
+        </tr>`;
     }
 
-    const clients = [...new Set(invoices.map(inv => inv.clientName))];
-    const select = document.getElementById('clientDashboardSelect');
-    select.innerHTML = '<option value="">-- Select Client --</option>';
-    clients.forEach(client => {
-        select.innerHTML += `<option value="${client}">${client}</option>`;
-    });
+    // Previous years TDS
+    if (prevTds.length > 0) {
+        printHtml += `<tr><td colspan="6" style="background:#d0d0d0;font-weight:bold;">PREVIOUS YEARS TDS</td></tr>`;
+        prevTds.forEach(p => {
+            printHtml += `<tr>
+                <td>${p.invoiceNo}</td>
+                <td>${p.clientName}</td>
+                <td>-</td>
+                <td>${p.tdsAmount.toFixed(2)}</td>
+                <td>${p.year}</td>
+                <td>${p.tds26asStatus}</td>
+            </tr>`;
+        });
+        printHtml += `<tr class="subtotal">
+            <td colspan="3">Previous Years TDS:</td>
+            <td>${totalPrevTDS.toFixed(2)}</td>
+            <td colspan="2"></td>
+        </tr>`;
+    }
+
+    const totalTDS = totalCurrentTDS + totalPrevTDS;
+    printHtml += `<tr class="grand-total">
+        <td colspan="3">TOTAL TDS:</td>
+        <td>${totalTDS.toFixed(2)}</td>
+        <td colspan="2"></td>
+    </tr></table>
+    <div class="timestamp">Generated: ${currentDate}</div>
+        </body>
+        </html>
+    `;
+
+    const printWindow = window.open('', '', 'height=600,width=900');
+    printWindow.document.write(printHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); }, 250);
 }
 
-function generateClientDashboard() {
-    alert('Client dashboard generation - coming soon');
-}
+setupDemo = () => {
+    const users = {};
+    users['admin@demo.com'] = { id: '1', name: 'Admin', email: 'admin@demo.com', password: 'admin123', role: 'admin' };
+    users['akhtar@demo.com'] = { id: '2', name: 'Akhtar', email: 'akhtar@demo.com', password: 'akhtar123', role: 'client' };
+    localStorage.setItem('users', JSON.stringify(users));
+};
 
-// ==================== INIT ====================
-function initializeTabs() {
-    const tabs = ['Outstanding Report', 'Invoice Master', 'Payment Receipts', 'TDS Tracking', 'Tax Reminders', 'Client Dashboards'];
-    const tabMap = {
-        'Outstanding Report': 3,
-        'Invoice Master': 1,
-        'Payment Receipts': 2,
-        'TDS Tracking': 4,
-        'Tax Reminders': 5,
-        'Client Dashboards': 6
-    };
-
-    const tabsContainer = document.getElementById('tabsContainer');
-    tabsContainer.innerHTML = '';
-
-    tabs.forEach((tab, index) => {
-        const button = document.createElement('button');
-        button.className = 'tab-button' + (index === 0 ? ' active' : '');
-        button.textContent = tab;
-        const htmlTabId = tabMap[tab];
-
-        button.onclick = () => {
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-            document.getElementById('tab-' + htmlTabId).classList.add('active');
-            button.classList.add('active');
-
-            if (tab === 'Outstanding Report') loadOutstanding();
-            if (tab === 'Client Dashboards') loadClientDashboardList();
-        };
-        tabsContainer.appendChild(button);
-    });
-
-    document.getElementById('tab-3').classList.add('active');
-}
-
-// Initialize
+setupDemo();
 checkAuth();
 </script>
 
