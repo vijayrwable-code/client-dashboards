@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Accounting & Invoice Management System</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: #fafafa; color: #1a1a1a; line-height: 1.6; }
@@ -37,16 +37,20 @@
         tr:hover { background: #fafafa; }
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
         .form-row.full { grid-template-columns: 1fr; }
+        .form-row.three { grid-template-columns: 1fr 1fr 1fr; }
         .button-group { display: flex; gap: 12px; margin-top: 20px; }
         .button-group button { flex: 1; }
         .logout-btn { background: #ef4444; padding: 8px 16px; font-size: 12px; border-radius: 6px; }
         .logout-btn:hover { background: #dc2626; }
         .admin-badge { display: inline-block; background: #0066cc; color: #ffffff; padding: 4px 10px; font-size: 11px; border-radius: 4px; margin-left: 12px; font-weight: 600; }
         .hidden { display: none; }
-        .status-paid { color: #22c55e; font-weight: 700; }
-        .status-partial { color: #f59e0b; font-weight: 700; }
-        .status-unpaid { color: #ef4444; font-weight: 700; }
-        .loading { color: #0066cc; }
+        .icon-btn { background: none; border: none; cursor: pointer; padding: 4px; font-size: 14px; color: #ef4444; }
+        .copy-btn { background: #22c55e; color: #ffffff; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; margin-top: 12px; font-weight: 600; }
+        .copy-btn:hover { background: #16a34a; }
+        .whatsapp-message { background: #f5f5f5; border: 1px solid #e0e0e0; padding: 16px; margin-top: 16px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+        small { color: #666666; font-size: 12px; }
+        .loading { display: inline-block; width: 12px; height: 12px; border: 2px solid #f3f3f3; border-top: 2px solid #0066cc; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -61,9 +65,12 @@
         <label>Password</label>
         <input type="password" id="loginPassword" placeholder="••••••••">
     </div>
-    <button onclick="handleLogin()">Sign In</button>
+    <button onclick="login()">Sign In</button>
     <p style="text-align: center; margin-top: 16px; font-size: 12px;">
-        New user? <a href="#" onclick="showSignupForm(); return false;" style="color: #0066cc; text-decoration: none;">Create account</a>
+        New user? <a href="#" onclick="showSignup()" style="color: #0066cc; text-decoration: none;">Create account</a>
+    </p>
+    <p style="text-align: center; margin-top: 12px; font-size: 11px; color: #999;">
+        Demo: admin@demo.com / admin123
     </p>
 </div>
 
@@ -85,8 +92,8 @@
         <label>User Type</label>
         <select id="signupRole"><option value="client">Client</option><option value="admin">Admin</option></select>
     </div>
-    <button onclick="handleSignup()">Create Account</button>
-    <button class="secondary" onclick="showLoginForm(); return false;" style="margin-top: 12px;">Back to Login</button>
+    <button onclick="signup()">Create Account</button>
+    <button class="secondary" onclick="showLogin()" style="margin-top: 12px;">Back to Login</button>
 </div>
 
 <div id="appContainer" class="hidden">
@@ -98,367 +105,879 @@
                 <span id="adminBadge" class="admin-badge hidden">ADMIN</span>
             </div>
         </div>
-        <button class="logout-btn" onclick="handleLogout()">Logout</button>
+        <div style="display:flex; gap:12px;">
+            <button class="logout-btn" onclick="clearAllData()" style="background:#dc2626;">Clear All Data</button>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
     </header>
 
-    <div class="tabs">
-        <button class="tab-button active" onclick="switchTab(event, 'invoices')">📄 Invoices</button>
-        <button class="tab-button" onclick="switchTab(event, 'payments')">💳 Payments</button>
-        <button class="tab-button" onclick="switchTab(event, 'tds')">🏛️ TDS</button>
-        <button class="tab-button" onclick="switchTab(event, 'dashboards')">📊 Dashboards</button>
-    </div>
+    <div class="container">
+        <div class="tabs" id="tabsContainer"></div>
 
-    <!-- Invoices Tab -->
-    <div id="invoices" class="tab-content active">
-        <div class="section-title">Add New Invoice</div>
-        <div class="form-row">
-            <input type="text" id="invNumber" placeholder="Invoice Number (e.g., INV-001)">
-            <input type="date" id="invDate">
+        <!-- TAB 1: INVOICE MASTER -->
+        <div id="tab-1" class="tab-content active">
+            <div class="section-title">Invoice Master</div>
+
+            <!-- MANUAL ENTRY -->
+            <div style="margin-bottom:24px;padding:16px;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:6px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Add Invoice Manually</div>
+                <div class="form-row three">
+                    <div>
+                        <label>Invoice Number</label>
+                        <input type="text" id="invNumber" placeholder="INV-001">
+                    </div>
+                    <div>
+                        <label>Date (DD-MM-YYYY)</label>
+                        <input type="date" id="invDate">
+                    </div>
+                    <div>
+                        <label>Client Name</label>
+                        <input type="text" id="invClient" placeholder="Akhtar Fazel">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label>Amount (₹)</label>
+                        <input type="number" id="invAmount" placeholder="50000">
+                    </div>
+                    <div>
+                        <label>Narration</label>
+                        <input type="text" id="invNarration" placeholder="Services rendered">
+                    </div>
+                </div>
+                <button onclick="addInvoiceManual()" style="margin-top:12px;">Add Invoice</button>
+            </div>
+
+            <!-- BULK IMPORT -->
+            <div style="margin-bottom:24px;padding:16px;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:6px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Bulk Import from Tally</div>
+                <div class="form-row full">
+                    <div>
+                        <label>Upload Tally Excel</label>
+                        <input type="file" id="excelFile" accept=".xlsx,.xls">
+                        <small>Download Optional Vouchers sheet from Tally</small>
+                    </div>
+                </div>
+                <button onclick="importTallyExcel()">Import from Tally</button>
+            </div>
+
+            <div id="invoiceList"></div>
         </div>
-        <div class="form-row">
-            <input type="number" id="invAmount" placeholder="Total Amount" step="0.01">
-            <input type="text" id="invNarration" placeholder="Description">
+
+        <!-- TAB 2: PAYMENT RECEIPTS -->
+        <div id="tab-2" class="tab-content">
+            <div class="section-title">Payment Receipt Entry</div>
+
+            <div class="form-row">
+                <div>
+                    <label>Select Invoice</label>
+                    <select id="payInvoiceNumber" onchange="updatePaymentDetails()"></select>
+                </div>
+                <div>
+                    <label>Payment Date (DD-MM-YYYY)</label>
+                    <input type="date" id="payDate" onchange="formatPaymentDate()">
+                    <small id="payDateDisplay" style="color:#999;">Select date</small>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div>
+                    <label>Tax Invoice Number (if different from above)</label>
+                    <input type="text" id="payTaxInvoiceNumber" placeholder="TI/26-27/013">
+                    <small style="color:#666;">Leave blank to keep current invoice number</small>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div>
+                    <label>Amount Received (₹)</label>
+                    <input type="number" id="payAmountReceived" placeholder="0" oninput="calculateBalanceAmount()">
+                </div>
+                <div>
+                    <label>TDS Amount (₹)</label>
+                    <input type="number" id="payTDS" placeholder="0" oninput="calculateBalanceAmount()">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div>
+                    <label>Balance Amount (₹)</label>
+                    <input type="number" id="payBalance" placeholder="0" readonly style="background:#f5f5f5;">
+                    <small style="color:#666;">Remaining Outstanding (Invoice Amount - Amount Received - TDS)</small>
+                </div>
+            </div>
+
+            <div id="paymentDetails"></div>
+            <button onclick="addPayment()" style="margin-top: 16px; width: 100%; padding: 12px; background: #0066cc; color: white; font-size: 14px; font-weight: 600; border: none; border-radius: 6px; cursor: pointer;">Record Payment</button>
+
+            <div id="paymentList"></div>
         </div>
-        <button onclick="addInvoice()" style="margin-bottom: 20px;">Add Invoice</button>
 
-        <div class="section-title">Invoice List</div>
-        <table id="invoiceTable">
-            <tr><th>Invoice #</th><th>Date</th><th>Amount</th><th>Status</th><th>Action</th></tr>
-        </table>
-    </div>
-
-    <!-- Payments Tab -->
-    <div id="payments" class="tab-content">
-        <div class="section-title">Record Payment</div>
-        <div class="form-row">
-            <input type="text" id="payInvNumber" placeholder="Invoice Number">
-            <input type="date" id="payDate">
+        <!-- TAB 3: OUTSTANDING REPORT -->
+        <div id="tab-3" class="tab-content">
+            <div class="section-title">Outstanding Invoice Report (Pending & Partial)</div>
+            <div style="display:flex;gap:12px;margin-bottom:16px;">
+                <button onclick="exportOutstandingToPDF()" style="background:#2563eb;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">📄 Export to PDF</button>
+            </div>
+            <div id="reportContainer"></div>
         </div>
-        <div class="form-row">
-            <input type="number" id="payAmount" placeholder="Amount" step="0.01">
-            <input type="number" id="payTDS" placeholder="TDS Deducted" step="0.01">
+
+        <!-- TAB 4: TDS TRACKING -->
+        <div id="tab-4" class="tab-content">
+            <div class="section-title">TDS Tracking & 26AS</div>
+
+            <!-- Add Previous TDS Receivable -->
+            <div style="margin-bottom:24px;padding:16px;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:6px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:12px;">Add Previous TDS Receivable (Prior Years)</div>
+                <div class="form-row three">
+                    <div>
+                        <label>Client Name</label>
+                        <input type="text" id="prevTdsClient" placeholder="Client name">
+                    </div>
+                    <div>
+                        <label>Year</label>
+                        <input type="text" id="prevTdsYear" placeholder="2023-24">
+                    </div>
+                    <div>
+                        <label>TDS Amount (₹)</label>
+                        <input type="number" id="prevTdsAmount" placeholder="0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label>Invoice No.</label>
+                        <input type="text" id="prevTdsInvoice" placeholder="INV-001">
+                    </div>
+                    <div>
+                        <label>26AS Received?</label>
+                        <select id="prevTds26asStatus">
+                            <option value="No">No</option>
+                            <option value="Yes">Yes</option>
+                        </select>
+                    </div>
+                </div>
+                <button onclick="addPreviousTds()" style="margin-top:12px;">Add Previous TDS</button>
+            </div>
+
+            <!-- TDS Summary -->
+            <div style="display:flex;gap:12px;margin-bottom:16px;">
+                <button onclick="exportTdsReportToPDF()" style="background:#2563eb;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">📄 Print TDS Report</button>
+            </div>
+
+            <div id="tdsList"></div>
         </div>
-        <button onclick="addPayment()" style="margin-bottom: 20px;">Record Payment</button>
 
-        <div class="section-title">Payment History</div>
-        <table id="paymentTable">
-            <tr><th>Invoice #</th><th>Date</th><th>Amount</th><th>TDS</th></tr>
-        </table>
-    </div>
+        <!-- TAB 5: TAX REMINDERS -->
+        <div id="tab-5" class="tab-content">
+            <div class="section-title">Tax Reminders</div>
 
-    <!-- TDS Tab -->
-    <div id="tds" class="tab-content">
-        <div class="section-title">TDS Tracking</div>
-        <table id="tdsTable">
-            <tr><th>Invoice #</th><th>TDS Amount</th><th>Status</th></tr>
-        </table>
-    </div>
+            <div class="form-row">
+                <div>
+                    <label>Reminder Type</label>
+                    <select id="reminderType">
+                        <option value="Advance Tax">Advance Tax</option>
+                        <option value="Insurance">Insurance</option>
+                        <option value="GST Filing">GST Filing</option>
+                    </select>
+                </div>
+                <div>
+                    <label>Due Date (DDMMYYYY)</label>
+                    <input type="text" id="reminderDueDate" placeholder="15102026">
+                </div>
+            </div>
 
-    <!-- Dashboards Tab -->
-    <div id="dashboards" class="tab-content">
-        <div class="section-title">Generate Client Dashboard</div>
-        <div class="form-group">
-            <label>Client Name</label>
-            <input type="text" id="clientName" placeholder="e.g., Akhtar Fazel">
+            <button onclick="addReminder()">Add Reminder</button>
+            <div id="reminderList"></div>
         </div>
-        <button onclick="generateClientDashboard()">Generate Dashboard</button>
-        <div id="dashboardMessage" style="margin-top: 16px;"></div>
+
+        <!-- TAB 6: CLIENT DASHBOARDS -->
+        <div id="tab-6" class="tab-content">
+            <div class="section-title">Generate Client Dashboard</div>
+            <p style="font-size:12px;color:#666;margin-bottom:16px;">Generate a standalone dashboard for each client. The file will contain all their invoices, payments, and TDS information and can be opened directly without a server.</p>
+
+            <div class="form-row">
+                <div>
+                    <label>Select Client</label>
+                    <select id="clientDashboardSelect">
+                        <option value="">-- Select Client --</option>
+                    </select>
+                </div>
+            </div>
+
+            <button onclick="generateClientDashboard()" style="margin-top:16px;background:#22c55e;">📥 Generate & Download Dashboard</button>
+            <div id="dashboardMessage" style="margin-top:16px;"></div>
+        </div>
     </div>
 </div>
 
 <script>
 // Firebase Configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyCGHet-5T-gILcZrLSVoTUr6Oj0uf80ljM",
-  authDomain: "accounting-app-74cc8.firebaseapp.com",
-  projectId: "accounting-app-74cc8",
-  storageBucket: "accounting-app-74cc8.firebasestorage.app",
-  messagingSenderId: "829534391621",
-  appId: "1:829534391621:web:2be694419f96146f9d822c"
+    apiKey: "AIzaSyCGHet-5T-gILcZrLSVoTUr6Oj0uf80ljM",
+    authDomain: "accounting-app-74cc8.firebaseapp.com",
+    projectId: "accounting-app-74cc8",
+    storageBucket: "accounting-app-74cc8.firebasestorage.app",
+    messagingSenderId: "829534391621",
+    appId: "1:829534391621:web:2be694419f96146f9d822c"
 };
 
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
-
-let currentUser = null;
-
-// Authentication Functions
-function showLoginForm() {
-    document.getElementById('authContainer').classList.remove('hidden');
-    document.getElementById('signupContainer').classList.add('hidden');
+let db, auth;
+try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    auth = firebase.auth();
+} catch (err) {
+    console.error('Firebase init error:', err);
 }
 
-function showSignupForm() {
+let currentUser = null;
+let isAdmin = false;
+let isDemo = false;
+
+// ==================== UTILITY FUNCTIONS ====================
+function formatDateDDMMYYYY(val) {
+    if (!val && val !== 0) return '';
+    let day, month, year;
+    if (val instanceof Date) {
+        day = val.getDate();
+        month = val.getMonth() + 1;
+        year = val.getFullYear();
+    } else if (typeof val === 'number') {
+        let date;
+        if (val > 50000) date = new Date(val);
+        else if (val > 0) date = new Date(Math.round((val - 25569) * 86400000));
+        else return '';
+        day = date.getDate();
+        month = date.getMonth() + 1;
+        year = date.getFullYear();
+    } else if (typeof val === 'string') {
+        const str = val.trim();
+        const formats = [/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/, /^(\d{1,2})[\/\-\.](Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[\/\-\.](\d{2,4})$/i];
+        let matched = false;
+        const numMatch = str.match(formats[0]);
+        if (numMatch) {
+            day = parseInt(numMatch[1], 10);
+            month = parseInt(numMatch[2], 10);
+            year = parseInt(numMatch[3], 10);
+            matched = true;
+        }
+        if (!matched) {
+            const textMatch = str.match(formats[1]);
+            if (textMatch) {
+                day = parseInt(textMatch[1], 10);
+                const monthNames = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+                month = monthNames[textMatch[2].toLowerCase().substring(0, 3)];
+                year = parseInt(textMatch[3], 10);
+                matched = true;
+            }
+        }
+        if (!matched) return '';
+    } else return '';
+    if (year < 100) year = year < 50 ? 2000 + year : 1900 + year;
+    if (!day || !month || !year || day < 1 || day > 31 || month < 1 || month > 12) return '';
+    const testDate = new Date(year, month - 1, day);
+    if (isNaN(testDate.getTime())) return '';
+    const d = String(testDate.getDate()).padStart(2, '0');
+    const m = String(testDate.getMonth() + 1).padStart(2, '0');
+    const y = testDate.getFullYear();
+    return d + m + y;
+}
+
+function formatDateDDMMYYYYDisplay(dateStr) {
+    if (!dateStr) return '';
+    const ddmmyyyy = dateStr.toString();
+    if (ddmmyyyy.length !== 8) return dateStr;
+    return ddmmyyyy.substring(0, 2) + '-' + ddmmyyyy.substring(2, 4) + '-' + ddmmyyyy.substring(4, 8);
+}
+
+function calculateGST(totalAmount) {
+    const taxable = totalAmount / 1.18;
+    const gst = totalAmount - taxable;
+    return {
+        total: parseFloat(totalAmount.toFixed(2)),
+        taxable: parseFloat(taxable.toFixed(2)),
+        gst: parseFloat(gst.toFixed(2))
+    };
+}
+
+// ==================== FIRESTORE FUNCTIONS ====================
+async function loadFromFirestore(collection, where = null) {
+    try {
+        let query = db.collection(collection);
+        if (where) query = query.where(where.field, where.operator, where.value);
+        const snapshot = await query.get();
+        return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (err) {
+        console.error('Error loading from Firestore:', err);
+        return [];
+    }
+}
+
+async function saveToFirestore(collection, docId, data) {
+    try {
+        if (docId) {
+            await db.collection(collection).doc(docId).set(data, { merge: true });
+        } else {
+            return await db.collection(collection).add(data);
+        }
+    } catch (err) {
+        console.error('Error saving to Firestore:', err);
+        throw err;
+    }
+}
+
+async function deleteFromFirestore(collection, docId) {
+    try {
+        await db.collection(collection).doc(docId).delete();
+    } catch (err) {
+        console.error('Error deleting from Firestore:', err);
+        throw err;
+    }
+}
+
+// ==================== AUTH FUNCTIONS ====================
+function checkAuth() {
+    auth.onAuthStateChanged(async (user) => {
+        if (user) {
+            currentUser = { email: user.email, uid: user.uid };
+            isAdmin = true;
+            isDemo = false;
+            showApp();
+        } else {
+            currentUser = null;
+            isAdmin = false;
+            showAuth();
+        }
+    });
+}
+
+function showAuth() {
+    document.getElementById('authContainer').classList.remove('hidden');
+    document.getElementById('appContainer').classList.add('hidden');
+}
+
+function showApp() {
+    document.getElementById('authContainer').classList.add('hidden');
+    document.getElementById('appContainer').classList.remove('hidden');
+    document.getElementById('userEmail').textContent = currentUser.email;
+    if (isAdmin) {
+        document.getElementById('adminBadge').classList.remove('hidden');
+    }
+    initializeTabs();
+    loadInvoices();
+    loadPayments();
+    loadReminders();
+}
+
+function showLogin() {
+    document.getElementById('signupContainer').classList.add('hidden');
+    document.getElementById('authContainer').classList.remove('hidden');
+}
+
+function showSignup() {
     document.getElementById('authContainer').classList.add('hidden');
     document.getElementById('signupContainer').classList.remove('hidden');
 }
 
-function handleLogin() {
+async function login() {
     const email = document.getElementById('loginEmail').value;
     const password = document.getElementById('loginPassword').value;
 
     if (!email || !password) {
-        alert('Please fill in all fields');
+        alert('Please fill all fields');
         return;
     }
 
-    auth.signInWithEmailAndPassword(email, password)
-        .then(() => {
-            showApp();
-        })
-        .catch(error => {
-            alert('Login failed: ' + error.message);
-        });
+    // Demo mode
+    if (email === 'admin@demo.com' && password === 'admin123') {
+        currentUser = { email: 'admin@demo.com', uid: 'demo-admin', name: 'Admin' };
+        isAdmin = true;
+        isDemo = true;
+        showApp();
+        return;
+    }
+
+    if (email === 'akhtar@demo.com' && password === 'akhtar123') {
+        currentUser = { email: 'akhtar@demo.com', uid: 'demo-akhtar', name: 'Akhtar' };
+        isAdmin = false;
+        isDemo = true;
+        showApp();
+        return;
+    }
+
+    // Firebase auth
+    try {
+        const userCred = await auth.signInWithEmailAndPassword(email, password);
+        currentUser = { email: userCred.user.email, uid: userCred.user.uid };
+        isAdmin = true;
+        isDemo = false;
+        showApp();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
 }
 
-function handleSignup() {
+async function signup() {
     const name = document.getElementById('signupName').value;
     const email = document.getElementById('signupEmail').value;
     const password = document.getElementById('signupPassword').value;
     const role = document.getElementById('signupRole').value;
 
     if (!name || !email || !password) {
-        alert('Please fill in all fields');
+        alert('Please fill all fields');
         return;
     }
 
-    auth.createUserWithEmailAndPassword(email, password)
-        .then((userCredential) => {
-            const user = userCredential.user;
-            db.collection('users').doc(user.uid).set({
-                uid: user.uid,
-                name: name,
-                email: email,
-                role: role,
-                createdAt: new Date()
-            });
-            alert('Account created! Please sign in.');
-            showLoginForm();
-        })
-        .catch(error => {
-            alert('Signup failed: ' + error.message);
-        });
+    try {
+        const userCred = await auth.createUserWithEmailAndPassword(email, password);
+        currentUser = { email: userCred.user.email, uid: userCred.user.uid, name, role };
+        isAdmin = role === 'admin';
+        isDemo = false;
+        showApp();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
 }
 
-function handleLogout() {
-    auth.signOut().then(() => {
-        location.reload();
-    });
+async function logout() {
+    if (!isDemo) {
+        await auth.signOut();
+    }
+    currentUser = null;
+    isAdmin = false;
+    isDemo = false;
+    showAuth();
 }
 
-function showApp() {
-    document.getElementById('authContainer').classList.add('hidden');
-    document.getElementById('signupContainer').classList.add('hidden');
-    document.getElementById('appContainer').classList.remove('hidden');
+async function clearAllData() {
+    const confirmed = confirm('⚠️ WARNING: This will DELETE ALL invoices, payments, TDS records, and reminders.\n\nThis action CANNOT be undone.\n\nAre you sure?');
+    if (!confirmed) return;
 
-    currentUser = auth.currentUser;
-    document.getElementById('userEmail').textContent = currentUser.email;
+    const confirmed2 = confirm('Last chance! This will permanently delete everything.\n\nClick OK only if you are absolutely sure.');
+    if (!confirmed2) return;
 
-    db.collection('users').doc(currentUser.uid).get().then(doc => {
-        if (doc.data().role === 'admin') {
-            document.getElementById('adminBadge').classList.remove('hidden');
+    try {
+        if (isDemo) {
+            // For demo, clear localStorage
+            localStorage.removeItem('invoices_' + currentUser.email);
+            localStorage.removeItem('payments_' + currentUser.email);
+            localStorage.removeItem('tds_' + currentUser.email);
+            localStorage.removeItem('tdsTracking_' + currentUser.email);
+            localStorage.removeItem('prevTds_' + currentUser.email);
+            localStorage.removeItem('reminders_' + currentUser.email);
+        } else {
+            // For Firebase, delete all documents
+            const collections = ['invoices', 'payments', 'tdsTracking', 'prevTds', 'reminders'];
+            for (const collection of collections) {
+                const docs = await db.collection(collection).where('userId', '==', currentUser.uid).get();
+                docs.docs.forEach(doc => doc.ref.delete());
+            }
         }
-    });
-
-    loadInvoices();
-    loadPayments();
-    loadTDS();
+        alert('✓ All data cleared successfully!');
+        logout();
+    } catch (err) {
+        alert('Error clearing data: ' + err.message);
+    }
 }
 
-// Invoice Functions
-function addInvoice() {
-    const number = document.getElementById('invNumber').value;
-    const date = document.getElementById('invDate').value;
+// ==================== INVOICE FUNCTIONS ====================
+async function addInvoiceManual() {
+    const number = document.getElementById('invNumber').value.trim();
+    const dateInput = document.getElementById('invDate').value;
+    const clientName = document.getElementById('invClient').value.trim();
     const amount = parseFloat(document.getElementById('invAmount').value);
-    const narration = document.getElementById('invNarration').value;
+    const narration = document.getElementById('invNarration').value.trim();
 
-    if (!number || !date || !amount) {
-        alert('Please fill in required fields');
+    if (!number || !dateInput || !clientName || !amount) {
+        alert('Please fill all fields');
         return;
     }
 
-    db.collection('users').doc(currentUser.uid).collection('invoices').add({
+    const [year, month, day] = dateInput.split('-');
+    const dateFormatted = day + month + year;
+    const breakdown = calculateGST(amount);
+
+    const invoiceData = {
         number: number,
-        date: date,
-        totalAmount: amount,
-        taxableAmount: amount / 1.18,
-        gstAmount: amount - (amount / 1.18),
+        date: dateFormatted,
+        totalAmount: breakdown.total,
+        taxableAmount: breakdown.taxable,
+        gstAmount: breakdown.gst,
+        clientName: clientName,
         narration: narration,
         status: 'Unpaid',
         paidAmount: 0,
-        createdAt: new Date()
-    }).then(() => {
-        document.getElementById('invNumber').value = '';
-        document.getElementById('invDate').value = '';
-        document.getElementById('invAmount').value = '';
-        document.getElementById('invNarration').value = '';
-        loadInvoices();
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+        createdAt: new Date().toISOString()
+    };
+
+    if (isDemo) {
+        const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+        invoiceData.id = Date.now().toString() + Math.random();
+        invoices.push(invoiceData);
+        localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+    } else {
+        await saveToFirestore('invoices', null, invoiceData);
+    }
+
+    alert('✓ Invoice added');
+    document.getElementById('invNumber').value = '';
+    document.getElementById('invDate').value = '';
+    document.getElementById('invClient').value = '';
+    document.getElementById('invAmount').value = '';
+    document.getElementById('invNarration').value = '';
+    loadInvoices();
+    loadOutstanding();
+}
+
+async function loadInvoices() {
+    let invoices;
+    if (isDemo) {
+        invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    } else {
+        invoices = await loadFromFirestore('invoices', { field: 'userId', operator: '==', value: currentUser.uid });
+    }
+
+    const container = document.getElementById('invoiceList');
+    if (invoices.length === 0) {
+        container.innerHTML = '<p style="margin-top:16px;color:#666">No invoices</p>';
+        return;
+    }
+
+    let html = '<table><tr><th>Invoice</th><th>Date</th><th>Client</th><th>Narration</th><th>Amount</th><th>Taxable</th><th>GST</th><th>Status</th><th>Actions</th></tr>';
+    invoices.forEach(inv => {
+        const dateDisplay = formatDateDDMMYYYYDisplay(inv.date);
+        html += `<tr>
+            <td>${inv.number}</td>
+            <td>${dateDisplay}</td>
+            <td>${inv.clientName}</td>
+            <td>${inv.narration}</td>
+            <td>₹${inv.totalAmount.toFixed(2)}</td>
+            <td>₹${inv.taxableAmount.toFixed(2)}</td>
+            <td>₹${inv.gstAmount.toFixed(2)}</td>
+            <td>${inv.status}</td>
+            <td>
+                <button class="icon-btn" onclick="editInvoice('${inv.id}')" title="Edit">✏️</button>
+                <button class="icon-btn" onclick="cancelInvoice('${inv.id}')" title="Cancel">⊘</button>
+                <button class="icon-btn" onclick="deleteInvoice('${inv.id}')" title="Delete">🗑</button>
+            </td>
+        </tr>`;
+    });
+    html += '</table>';
+    container.innerHTML = html;
+
+    const select = document.getElementById('payInvoiceNumber');
+    select.innerHTML = '<option value="">-- Select Invoice --</option>';
+    const outstandingInvoices = invoices.filter(inv => {
+        const outstanding = inv.totalAmount - inv.paidAmount;
+        return outstanding > 0 && (inv.status === 'Unpaid' || inv.status === 'Partial');
+    });
+
+    outstandingInvoices.forEach(inv => {
+        const outstanding = inv.totalAmount - inv.paidAmount;
+        const outstandingText = outstanding > 0 ? `(Outstanding: ₹${outstanding.toFixed(2)})` : '';
+        select.innerHTML += `<option value="${inv.id}">${inv.number} | ${inv.clientName} | ${outstandingText}</option>`;
     });
 }
 
-function loadInvoices() {
-    db.collection('users').doc(currentUser.uid).collection('invoices').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-        document.getElementById('invoiceTable').innerHTML = '<tr><th>Invoice #</th><th>Date</th><th>Amount</th><th>Status</th><th>Action</th></tr>';
-
-        snapshot.forEach(doc => {
-            const inv = doc.data();
-            const row = `<tr>
-                <td>${inv.number}</td>
-                <td>${inv.date}</td>
-                <td>₹${inv.totalAmount.toFixed(2)}</td>
-                <td><span class="status-${inv.status.toLowerCase()}">${inv.status}</span></td>
-                <td><button class="icon-btn" onclick="deleteInvoice('${doc.id}')">🗑️</button></td>
-            </tr>`;
-            document.getElementById('invoiceTable').innerHTML += row;
-        });
-    });
-}
-
-function deleteInvoice(docId) {
+async function deleteInvoice(id) {
     if (confirm('Delete this invoice?')) {
-        db.collection('users').doc(currentUser.uid).collection('invoices').doc(docId).delete();
+        if (isDemo) {
+            let invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+            invoices = invoices.filter(i => i.id !== id);
+            localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+        } else {
+            await deleteFromFirestore('invoices', id);
+        }
+        loadInvoices();
+        loadOutstanding();
     }
 }
 
-// Payment Functions
-function addPayment() {
-    const invNumber = document.getElementById('payInvNumber').value;
-    const date = document.getElementById('payDate').value;
-    const amount = parseFloat(document.getElementById('payAmount').value);
-    const tds = parseFloat(document.getElementById('payTDS').value) || 0;
+function editInvoice(id) {
+    alert('Edit functionality - invoice ' + id);
+}
 
-    if (!invNumber || !date || !amount) {
-        alert('Please fill in required fields');
+async function cancelInvoice(id) {
+    if (confirm('Mark this invoice as Cancelled?')) {
+        if (isDemo) {
+            const invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+            const inv = invoices.find(i => i.id === id);
+            if (inv) {
+                inv.status = 'Cancelled';
+                inv.paidAmount = 0;
+                localStorage.setItem('invoices_' + currentUser.email, JSON.stringify(invoices));
+            }
+        } else {
+            await saveToFirestore('invoices', id, { status: 'Cancelled', paidAmount: 0 });
+        }
+        loadInvoices();
+        loadOutstanding();
+    }
+}
+
+// ==================== PAYMENT FUNCTIONS ====================
+function updatePaymentDetails() {
+    // TODO: implement payment details update
+}
+
+function formatPaymentDate() {
+    const datePicker = document.getElementById('payDate');
+    const dateDisplay = document.getElementById('payDateDisplay');
+    if (datePicker.value) {
+        const [year, month, day] = datePicker.value.split('-');
+        const formatted = day + '-' + month + '-' + year;
+        dateDisplay.textContent = formatted;
+    } else {
+        dateDisplay.textContent = 'Select date';
+    }
+}
+
+function calculateBalanceAmount() {
+    // TODO: implement balance calculation
+}
+
+async function addPayment() {
+    alert('Payment recording - coming soon');
+}
+
+async function loadPayments() {
+    let payments = [];
+    if (isDemo) {
+        payments = JSON.parse(localStorage.getItem('payments_' + currentUser.email) || '[]');
+    } else {
+        payments = await loadFromFirestore('payments', { field: 'userId', operator: '==', value: currentUser.uid });
+    }
+
+    const container = document.getElementById('paymentList');
+    if (payments.length === 0) {
+        container.innerHTML = '<p style="margin-top:16px;color:#666">No payments</p>';
         return;
     }
 
-    db.collection('users').doc(currentUser.uid).collection('payments').add({
-        invoiceNo: invNumber,
-        date: date,
-        amountReceived: amount,
-        tdsDeducted: tds,
-        createdAt: new Date()
-    }).then(() => {
-        document.getElementById('payInvNumber').value = '';
-        document.getElementById('payDate').value = '';
-        document.getElementById('payAmount').value = '';
-        document.getElementById('payTDS').value = '';
-        loadPayments();
+    let html = '<div style="margin-top:24px;"><div style="font-size:13px;font-weight:600;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #e0e0e0;">Payment History</div><table><tr><th>Invoice</th><th>Client</th><th>Date</th><th>Amount Received</th><th>TDS Amount</th><th>Balance Amount</th></tr>';
+    payments.forEach(p => {
+        const dateDisplay = formatDateDDMMYYYYDisplay(p.date);
+        html += `<tr>
+            <td>INV</td>
+            <td>Client</td>
+            <td>${dateDisplay}</td>
+            <td>₹${(p.amountReceived || 0).toFixed(2)}</td>
+            <td>₹${(p.tds || 0).toFixed(2)}</td>
+            <td>₹${(p.balance || 0).toFixed(2)}</td>
+        </tr>`;
     });
+    html += '</table></div>';
+    container.innerHTML = html;
 }
 
-function loadPayments() {
-    db.collection('users').doc(currentUser.uid).collection('payments').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-        document.getElementById('paymentTable').innerHTML = '<tr><th>Invoice #</th><th>Date</th><th>Amount</th><th>TDS</th></tr>';
+// ==================== OUTSTANDING REPORT ====================
+async function loadOutstanding() {
+    let invoices = [];
+    if (isDemo) {
+        invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    } else {
+        invoices = await loadFromFirestore('invoices', { field: 'userId', operator: '==', value: currentUser.uid });
+    }
 
-        snapshot.forEach(doc => {
-            const pmt = doc.data();
-            const row = `<tr>
-                <td>${pmt.invoiceNo}</td>
-                <td>${pmt.date}</td>
-                <td>₹${pmt.amountReceived.toFixed(2)}</td>
-                <td>₹${pmt.tdsDeducted.toFixed(2)}</td>
+    let filtered = invoices.filter(i => i.status === 'Unpaid' || i.status === 'Partial');
+    if (filtered.length === 0) {
+        document.getElementById('reportContainer').innerHTML = '<p style="margin-top:16px;color:#666">No outstanding invoices</p>';
+        return;
+    }
+
+    const groupedByClient = {};
+    let grandTotal = 0;
+    filtered.forEach(inv => {
+        const out = inv.totalAmount - inv.paidAmount;
+        if (out > 0) {
+            if (!groupedByClient[inv.clientName]) {
+                groupedByClient[inv.clientName] = { invoices: [], total: 0 };
+            }
+            groupedByClient[inv.clientName].invoices.push({
+                number: inv.number,
+                date: inv.date,
+                narration: inv.narration,
+                balance: out
+            });
+            groupedByClient[inv.clientName].total += out;
+            grandTotal += out;
+        }
+    });
+
+    let html = '<div style="margin-top:16px;">';
+    Object.keys(groupedByClient).sort().forEach(clientName => {
+        const clientData = groupedByClient[clientName];
+        html += `<div style="margin-bottom:24px;padding:16px;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:6px;">
+            <h3 style="margin-bottom:12px;color:#0066cc;font-size:14px;font-weight:600;">${clientName}</h3>
+            <table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:12px;">
+                <tr style="background:#f5f5f5;">
+                    <th style="padding:8px;text-align:center;border:1px solid #e0e0e0;font-weight:600;width:30px;">Sr</th>
+                    <th style="padding:8px;text-align:right;border:1px solid #e0e0e0;font-weight:600;">Amount (₹)</th>
+                    <th style="padding:8px;text-align:left;border:1px solid #e0e0e0;font-weight:600;">Narration</th>
+                    <th style="padding:8px;text-align:left;border:1px solid #e0e0e0;font-weight:600;">Date</th>
+                    <th style="padding:8px;text-align:left;border:1px solid #e0e0e0;font-weight:600;">Invoice</th>
+                </tr>`;
+
+        clientData.invoices.forEach((inv, idx) => {
+            const dateDisplay = formatDateDDMMYYYYDisplay(inv.date);
+            html += `<tr>
+                <td style="padding:8px;border:1px solid #e0e0e0;text-align:center;">${idx + 1}</td>
+                <td style="padding:8px;border:1px solid #e0e0e0;text-align:right;">₹${inv.balance.toFixed(2)}</td>
+                <td style="padding:8px;border:1px solid #e0e0e0;">${inv.narration}</td>
+                <td style="padding:8px;border:1px solid #e0e0e0;">${dateDisplay}</td>
+                <td style="padding:8px;border:1px solid #e0e0e0;">${inv.number}</td>
             </tr>`;
-            document.getElementById('paymentTable').innerHTML += row;
         });
+
+        html += `<tr style="background:#f0f0f0;font-weight:600;">
+            <td colspan="4" style="padding:8px;border:1px solid #e0e0e0;text-align:right;">Subtotal:</td>
+            <td style="padding:8px;border:1px solid #e0e0e0;text-align:right;">₹${clientData.total.toFixed(2)}</td>
+        </tr></table></div>`;
+    });
+
+    html += `<div style="padding:16px;background:#0066cc;color:#fff;border-radius:6px;font-weight:600;text-align:right;">
+        TOTAL OUTSTANDING: ₹${grandTotal.toFixed(2)}
+    </div></div>`;
+
+    document.getElementById('reportContainer').innerHTML = html;
+}
+
+function exportOutstandingToPDF() {
+    alert('PDF export coming soon');
+}
+
+// ==================== REMINDERS ====================
+async function addReminder() {
+    const type = document.getElementById('reminderType').value;
+    const date = document.getElementById('reminderDueDate').value;
+
+    if (!type || !date) {
+        alert('Fill all fields');
+        return;
+    }
+
+    const reminderData = {
+        type, date,
+        done: false,
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+        createdAt: new Date().toISOString()
+    };
+
+    if (isDemo) {
+        const reminders = JSON.parse(localStorage.getItem('reminders_' + currentUser.email) || '[]');
+        reminderData.id = Date.now().toString();
+        reminders.push(reminderData);
+        localStorage.setItem('reminders_' + currentUser.email, JSON.stringify(reminders));
+    } else {
+        await saveToFirestore('reminders', null, reminderData);
+    }
+
+    alert('✓ Reminder added');
+    document.getElementById('reminderType').value = 'Advance Tax';
+    document.getElementById('reminderDueDate').value = '';
+    loadReminders();
+}
+
+async function loadReminders() {
+    let reminders = [];
+    if (isDemo) {
+        reminders = JSON.parse(localStorage.getItem('reminders_' + currentUser.email) || '[]');
+    } else {
+        reminders = await loadFromFirestore('reminders', { field: 'userId', operator: '==', value: currentUser.uid });
+    }
+
+    const container = document.getElementById('reminderList');
+    if (reminders.length === 0) {
+        container.innerHTML = '<p style="margin-top:16px;color:#666">No reminders</p>';
+        return;
+    }
+
+    let html = '<table><tr><th>Type</th><th>Due Date (DDMMYYYY)</th><th>Days Left</th></tr>';
+    reminders.forEach(r => {
+        const dueStr = r.date;
+        const d = parseInt(dueStr.substring(0, 2));
+        const m = parseInt(dueStr.substring(2, 4));
+        const y = parseInt(dueStr.substring(4, 8));
+        const dueDate = new Date(y, m - 1, d);
+        const days = Math.ceil((dueDate - new Date()) / (1000*60*60*24));
+        html += `<tr><td>${r.type}</td><td>${r.date}</td><td>${days}d</td></tr>`;
+    });
+    html += '</table>';
+    container.innerHTML = html;
+}
+
+// ==================== TDS FUNCTIONS ====================
+async function addPreviousTds() {
+    alert('Previous TDS function - coming soon');
+}
+
+function exportTdsReportToPDF() {
+    alert('TDS PDF export coming soon');
+}
+
+// ==================== CLIENT DASHBOARD ====================
+async function loadClientDashboardList() {
+    let invoices = [];
+    if (isDemo) {
+        invoices = JSON.parse(localStorage.getItem('invoices_' + currentUser.email) || '[]');
+    } else {
+        invoices = await loadFromFirestore('invoices', { field: 'userId', operator: '==', value: currentUser.uid });
+    }
+
+    const clients = [...new Set(invoices.map(inv => inv.clientName))];
+    const select = document.getElementById('clientDashboardSelect');
+    select.innerHTML = '<option value="">-- Select Client --</option>';
+    clients.forEach(client => {
+        select.innerHTML += `<option value="${client}">${client}</option>`;
     });
 }
 
-// TDS Functions
-function loadTDS() {
-    db.collection('users').doc(currentUser.uid).collection('payments').where('tdsDeducted', '>', 0).onSnapshot(snapshot => {
-        document.getElementById('tdsTable').innerHTML = '<tr><th>Invoice #</th><th>TDS Amount</th><th>Status</th></tr>';
-
-        snapshot.forEach(doc => {
-            const pmt = doc.data();
-            const row = `<tr>
-                <td>${pmt.invoiceNo}</td>
-                <td>₹${pmt.tdsDeducted.toFixed(2)}</td>
-                <td>Pending</td>
-            </tr>`;
-            document.getElementById('tdsTable').innerHTML += row;
-        });
-    });
-}
-
-// Dashboard Generation
 function generateClientDashboard() {
-    const clientName = document.getElementById('clientName').value;
-    if (!clientName) {
-        alert('Please enter client name');
-        return;
-    }
+    alert('Client dashboard generation - coming soon');
+}
 
-    db.collection('users').doc(currentUser.uid).collection('invoices').get().then(invSnapshot => {
-        db.collection('users').doc(currentUser.uid).collection('payments').get().then(paySnapshot => {
-            const invoices = [];
-            const payments = [];
+// ==================== INIT ====================
+function initializeTabs() {
+    const tabs = ['Outstanding Report', 'Invoice Master', 'Payment Receipts', 'TDS Tracking', 'Tax Reminders', 'Client Dashboards'];
+    const tabMap = {
+        'Outstanding Report': 3,
+        'Invoice Master': 1,
+        'Payment Receipts': 2,
+        'TDS Tracking': 4,
+        'Tax Reminders': 5,
+        'Client Dashboards': 6
+    };
 
-            invSnapshot.forEach(doc => invoices.push(doc.data()));
-            paySnapshot.forEach(doc => payments.push(doc.data()));
+    const tabsContainer = document.getElementById('tabsContainer');
+    tabsContainer.innerHTML = '';
 
-            const html = `<!DOCTYPE html>
-<html>
-<head>
-    <title>${clientName} - Invoice Portal</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #fafafa; margin: 0; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
-        h1 { color: #0066cc; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { padding: 10px; text-align: left; border: 1px solid #ddd; }
-        th { background: #f5f5f5; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Invoice Portal - ${clientName}</h1>
-        <p>Generated: ${new Date().toLocaleDateString()}</p>
+    tabs.forEach((tab, index) => {
+        const button = document.createElement('button');
+        button.className = 'tab-button' + (index === 0 ? ' active' : '');
+        button.textContent = tab;
+        const htmlTabId = tabMap[tab];
 
-        <h2>Invoices</h2>
-        <table>
-            <tr><th>Invoice #</th><th>Date</th><th>Amount</th><th>Status</th></tr>
-            ${invoices.map(inv => `<tr><td>${inv.number}</td><td>${inv.date}</td><td>₹${inv.totalAmount.toFixed(2)}</td><td>${inv.status}</td></tr>`).join('')}
-        </table>
+        button.onclick = () => {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + htmlTabId).classList.add('active');
+            button.classList.add('active');
 
-        <h2>Payments</h2>
-        <table>
-            <tr><th>Invoice #</th><th>Date</th><th>Amount</th></tr>
-            ${payments.map(pmt => `<tr><td>${pmt.invoiceNo}</td><td>${pmt.date}</td><td>₹${pmt.amountReceived.toFixed(2)}</td></tr>`).join('')}
-        </table>
-    </div>
-</body>
-</html>`;
-
-            const element = document.createElement('a');
-            element.setAttribute('href', 'data:text/html;charset=utf-8,' + encodeURIComponent(html));
-            element.setAttribute('download', clientName.replace(/\s+/g, '_') + '_Dashboard.html');
-            element.style.display = 'none';
-            document.body.appendChild(element);
-            element.click();
-            document.body.removeChild(element);
-
-            document.getElementById('dashboardMessage').innerHTML = '<p style="color: green;">✓ Dashboard downloaded!</p>';
-        });
+            if (tab === 'Outstanding Report') loadOutstanding();
+            if (tab === 'Client Dashboards') loadClientDashboardList();
+        };
+        tabsContainer.appendChild(button);
     });
+
+    document.getElementById('tab-3').classList.add('active');
 }
 
-function switchTab(e, tabName) {
-    document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-    document.getElementById(tabName).classList.add('active');
-    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-    e.target.classList.add('active');
-}
-
-// Check Authentication
-auth.onAuthStateChanged((user) => {
-    if (user) {
-        currentUser = user;
-        showApp();
-    }
-});
+// Initialize
+checkAuth();
 </script>
 
 </body>
